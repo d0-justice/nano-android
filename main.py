@@ -6,55 +6,8 @@ import time
 # from scrcpy.device import MyWin
 # from scrcpy.image_provider import ImageProvider
 from device_view import DeviceView
+from device_screenshot import DeviceScreenshot
 
-# 简化的图像提供者类
-class SimpleImageProvider:
-    def __init__(self):
-        self.frame_count = 0
-    
-    def get_frame_as_base64(self):
-        """生成模拟的 Android 界面图像"""
-        import cv2
-        import numpy as np
-        import base64
-        
-        # 创建一个模拟的 Android 界面
-        img = np.zeros((800, 400, 3), dtype=np.uint8)
-        
-        # 背景色
-        img[:] = (240, 240, 240)
-        
-        # 状态栏
-        img[0:50, :] = (50, 50, 50)
-        cv2.putText(img, "Android Device", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        
-        # 主屏幕区域
-        img[50:750, :] = (245, 245, 245)
-        
-        # 模拟应用图标
-        for i in range(3):
-            for j in range(4):
-                x = 50 + j * 80
-                y = 100 + i * 120
-                cv2.rectangle(img, (x, y), (x+60, y+80), (100, 150, 200), -1)
-                cv2.putText(img, f"App{i*4+j+1}", (x+5, y+50), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-        
-        # 底部导航栏
-        img[750:800, :] = (200, 200, 200)
-        cv2.putText(img, "Home", (20, 780), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-        cv2.putText(img, "Back", (150, 780), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-        cv2.putText(img, "Recent", (280, 780), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-        
-        # 添加帧计数
-        self.frame_count += 1
-        cv2.putText(img, f"Frame: {self.frame_count}", (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
-        
-        # 转换为 base64
-        _, buffer = cv2.imencode('.png', img)
-        img_base64 = base64.b64encode(buffer).decode('utf-8')
-        return f"data:image/png;base64,{img_base64}"
-
-# 全局变量
 
 # 配置常量
 class Config:
@@ -87,85 +40,27 @@ def main(page: ft.Page):
     page.window.width = Config.WINDOW_WIDTH
     page.window.height = Config.WINDOW_HEIGHT
     
-    # 先定义 send_message 函数
-    def send_message(message: str):
-        if message.strip():
-            # 添加用户消息
-            device_view.add_message(message, is_user=True)
-            
-            # 添加AI回复消息
-            ai_response = f"I received your message: '{message}'. This is a simulated response."
-            device_view.add_message(ai_response, is_user=False)
-    
-    # 创建 DeviceView 实例
-    try:
-        device_view = DeviceView(on_send_message=send_message)
-        print("DeviceView 创建成功")
-    except Exception as e:
-        print(f"DeviceView 创建失败: {e}")
-        return
-    
     page.window.center()
     page.padding = 0
     print("页面配置完成...")
     
-    # 初始化 scrcpy 设备
-    device_window = None
-    image_provider = None
+    # 存储DeviceView实例以便清理
+    # 全局变量存储设备视图和截图组件实例
+    device_views = []
+    device_screenshots = []
     
-    def init_device():
-        nonlocal device_window, image_provider
-        try:
-            # 使用简化的图像提供者
-            image_provider = SimpleImageProvider()
-            print("设备初始化成功（使用模拟设备）")
-        except Exception as e:
-            print(f"设备初始化失败: {e}")
-            image_provider = None
+    # 页面关闭事件处理
+    def on_window_event(e):
+        if e.data == "close":
+            print("窗口正在关闭，清理资源...")
+            # 清理所有DeviceView实例
+            for device_view in device_views:
+                if hasattr(device_view, 'cleanup'):
+                    device_view.cleanup()
+            print("资源清理完成")
     
-    # 在后台线程中初始化设备
-    device_thread = threading.Thread(target=init_device, daemon=True)
-    device_thread.start()
+    page.on_window_event = on_window_event
     
-    # 图像更新回调函数
-    def update_device_image():
-        if image_provider:
-            base64_image = image_provider.get_frame_as_base64()
-            if base64_image:
-                # 直接更新图像（现在在主线程中调用）
-                device_view.update_device_image(base64_image)
-                print(f"Image updated, length: {len(base64_image)}")
-            else:
-                print("No base64 image received")
-        else:
-            print("Image provider not available")
-    
-    # 添加一个测试按钮来手动更新图像
-    def test_update_image(e):
-        if image_provider:
-            base64_image = image_provider.get_frame_as_base64()
-            if base64_image:
-                device_view.update_device_image(base64_image)
-                print("Manual image update triggered")
-    
-    test_button = ft.ElevatedButton(
-        text="Test Update Image",
-        on_click=test_update_image
-    )
-    
-    # 图像更新定时器
-    def start_image_update():
-        while True:
-            # 使用page.run_thread来确保UI更新在主线程中进行
-            def safe_update():
-                update_device_image()
-            
-            page.run_thread(safe_update)
-            time.sleep(0.1)  # 10 FPS 更新频率
-    
-    # 启动图像更新线程
-    image_update_thread = threading.Thread(target=start_image_update, daemon=True)
-    image_update_thread.start()
     
     # 添加头部
     header = ft.Container(
@@ -195,9 +90,50 @@ def main(page: ft.Page):
     
     # 键盘事件处理函数
     def on_keyboard(e: ft.KeyboardEvent):
-        """处理F1-F4快捷键滚动"""
-        if e.key in SCROLL_POSITIONS:
+        """处理F1-F4快捷键滚动、`键截图和设备键盘事件"""
+        print(f"键盘事件: {e.key}, shift: {e.shift}, ctrl: {e.ctrl}, alt: {e.alt}")  # 调试日志
+        
+        # 优先检查`键截图功能
+        if e.key == "`":
+            print("检测到`键，开始截图...")  # 调试日志
+            print(f"device_views列表长度: {len(device_views)}")
+            print(f"device_screenshots列表长度: {len(device_screenshots)}")
+            
+            # `键触发截图功能
+            screenshot_count = 0
+            for i, device_view in enumerate(device_views):
+                print(f"检查device_view[{i}]: {type(device_view)}")
+                print(f"  - 有client属性: {hasattr(device_view, 'client')}")
+                if hasattr(device_view, 'client'):
+                    print(f"  - client存在: {device_view.client is not None}")
+                    if device_view.client:
+                        print(f"  - client.alive: {device_view.client.alive}")
+                
+                if hasattr(device_view, 'client') and device_view.client and device_view.client.alive:
+                    print(f"找到活跃设备视图，current_frame存在: {hasattr(device_view, 'current_frame') and device_view.current_frame is not None}")
+                    # 获取当前帧数据
+                    if hasattr(device_view, 'current_frame') and device_view.current_frame is not None:
+                        print(f"当前帧形状: {device_view.current_frame.shape}")
+                        # 查找DeviceScreenshot实例并更新截图
+                        for j, screenshot_view in enumerate(device_screenshots):
+                            print(f"更新screenshot_view[{j}]")
+                            screenshot_view.update_screenshot(device_view.current_frame)
+                            screenshot_count += 1
+                        print(f"截图已更新到 {screenshot_count} 个DeviceScreenshot组件")
+                    else:
+                        print("没有可用的帧数据进行截图")
+                    break
+            if screenshot_count == 0:
+                print("没有找到DeviceScreenshot组件或活跃设备")
+        elif e.key in SCROLL_POSITIONS:
             scroll_to_position(e.key)
+        else:
+            # 将键盘事件转发给当前活跃的设备视图
+            for device_view in device_views:
+                if hasattr(device_view, 'client') and device_view.client and device_view.client.alive:
+                    # 直接传递键盘事件，不区分按下和释放
+                    device_view.keyPressEvent(e)
+                    break  # 只处理第一个活跃的设备
     
     page.on_keyboard_event = on_keyboard
     
@@ -229,8 +165,6 @@ def main(page: ft.Page):
         
         return title, description, button
     
-    # 创建UI组件
-    title, description, button = create_ui_components()
     
     # 创建带抽屉翻页效果的ListView项目
     def create_list_item(index):
@@ -344,32 +278,41 @@ def main(page: ft.Page):
         )
         
         # 创建独立的内容区域
-        content_area = ft.Container(
-            expand=True,  # 填充剩余空间
-            bgcolor=random_color,
-            content=ft.Text(
-                description, 
-                size=10,  # 缩小字体
-                text_align=ft.TextAlign.CENTER, 
-                color=ft.Colors.WHITE, 
-                weight=ft.FontWeight.NORMAL
-            ),
-            alignment=ft.alignment.center,
-            border_radius=8,  # 缩小圆角
-            padding=ft.padding.all(12),  # 增加内边距
-            border=ft.border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.WHITE)),  # 更细的边框
-            shadow=ft.BoxShadow(
-                spread_radius=0,
-                blur_radius=8,
-                color=ft.Colors.with_opacity(0.3, ft.Colors.BLACK),
-                offset=ft.Offset(1, 2)  # 右下方向
-            ),
-            animate=ft.Animation(300, ft.AnimationCurve.EASE_OUT),  # 添加动画效果
-            on_click=on_item_click,  # 添加点击事件
-            on_hover=on_item_hover,  # 添加hover事件
-            ink=True,  # 添加点击涟漪效果
-            tooltip=f"内容: {description}"  # 添加提示文本
-        )
+        if index == 0:  # 第一个item使用DeviceView
+            content_area = DeviceView("acde74a2", bgcolor=ft.Colors.with_opacity(0.9, random_color))
+            # 将DeviceView实例添加到列表中以便清理
+            device_views.append(content_area)
+        elif index == 1:  # 第二个item使用DeviceScreenshot
+            content_area = DeviceScreenshot(bgcolor=ft.Colors.with_opacity(0.9, random_color))
+            # 将DeviceScreenshot实例添加到列表中
+            device_screenshots.append(content_area)
+        else:  # 其他item使用原来的文本内容
+            content_area = ft.Container(
+                expand=True,  # 填充剩余空间
+                bgcolor=random_color,
+                content=ft.Text(
+                    description, 
+                    size=10,  # 缩小字体
+                    text_align=ft.TextAlign.CENTER, 
+                    color=ft.Colors.WHITE, 
+                    weight=ft.FontWeight.NORMAL
+                ),
+                alignment=ft.alignment.center,
+                border_radius=8,  # 缩小圆角
+                padding=ft.padding.all(12),  # 增加内边距
+                border=ft.border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.WHITE)),  # 更细的边框
+                shadow=ft.BoxShadow(
+                    spread_radius=0,
+                    blur_radius=8,
+                    color=ft.Colors.with_opacity(0.3, ft.Colors.BLACK),
+                    offset=ft.Offset(1, 2)  # 右下方向
+                ),
+                animate=ft.Animation(300, ft.AnimationCurve.EASE_OUT),  # 添加动画效果
+                on_click=on_item_click,  # 添加点击事件
+                on_hover=on_item_hover,  # 添加hover事件
+                ink=True,  # 添加点击涟漪效果
+                tooltip=f"内容: {description}"  # 添加提示文本
+            )
         
         return ft.Container(
             width=375,  # 减少5个像素，每个item宽度为375px
@@ -694,7 +637,20 @@ def main(page: ft.Page):
             ),
             ft.Tab(
                 text="Chat",
-                content=device_view.content
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text("Chat Interface", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_800),
+                        ft.Text("Communication and messaging interface", size=14, color=ft.Colors.GREY_600),
+                        ft.Container(
+                            content=ft.Text("Chat functionality will be implemented here", 
+                                          size=16, color=ft.Colors.GREY_500),
+                            expand=True,
+                            alignment=ft.alignment.center
+                        )
+                    ]),
+                    padding=20,
+                    expand=True
+                )
             ),
             ft.Tab(
                 text="Flow",
@@ -793,4 +749,5 @@ def main(page: ft.Page):
         page.update()
 
 if __name__ == "__main__":
+    # ft.app(target=main, view=ft.AppView.WEB_BROWSER, port=8550)
     ft.app(target=main)

@@ -11,12 +11,11 @@ import time
 import numpy as np
 import cv2
 import base64
-import queue
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from scrcpy.core import Client
-import scrcpy.const as const
+from scrcpy import const
 
 class AndroidMirrorApp:
 
@@ -39,41 +38,30 @@ class AndroidMirrorApp:
         self.mouse_y = 0
         self.current_frame = None  # 存储当前帧以便坐标转换
         
-        # 公共画布支持 - 供其他模块绘制UI元素边框
-        self.public_canvas = None  # 公共画布，其他模块可以在此绘制
-        self.canvas_lock = threading.RLock()  # 画布线程锁
+        # 图像显示相关
         
         # Flet UI 组件
         self.image_widget = None
         self.page = None
         
-        # 检查是否为模拟设备模式
-        if ch_name == "simulator":
-            print("启动模拟设备模式...")
-            self.client = None
-            self.simulator_mode = True
-            self.start_simulator()
-        else:
-            try:
-                print(f"正在初始化客户端，设备: {ch_name}")
-                self.client = Client(device=ch_name, max_width=800, bitrate=4000000, max_fps=20, connection_timeout=10000)
-                print("正在添加帧监听器...")
-                self.client.add_listener("frame", self.on_frame)
-                print("正在启动客户端...")
-                self.client.start(threaded=True)
-                print(f"成功连接到设备 {ch_name}")
-                self.simulator_mode = False
-            except Exception as e:
-                print(f"连接设备失败: {e}")
-                print("请确保:")
-                print("1. Android 设备已连接并启用 USB 调试")
-                print("2. 运行 'adb devices' 确认设备可见")
-                print("3. 运行 'adb push scrcpy-server.jar /data/local/tmp/' 推送服务器文件")
-                print("4. 在设备上允许屏幕录制权限")
-                print("启动模拟设备模式...")
-                self.client = None
-                self.simulator_mode = True
-                self.start_simulator()
+        # 直接连接设备
+        try:
+            print(f"正在初始化客户端，设备: {ch_name}")
+            self.client = Client(device=ch_name, max_width=800, bitrate=4000000, max_fps=20, connection_timeout=10000)
+            print("正在添加帧监听器...")
+            self.client.add_listener("frame", self.on_frame)
+            print("正在启动客户端...")
+            self.client.start(threaded=True)
+            print(f"成功连接到设备 {ch_name}")
+        except Exception as e:
+            print(f"连接设备失败: {e}")
+            print("请确保:")
+            print("1. Android 设备已连接并启用 USB 调试")
+            print("2. 运行 'adb devices' 确认设备可见")
+            print("3. 运行 'adb push scrcpy-server.jar /data/local/tmp/' 推送服务器文件")
+            print("4. 在设备上允许屏幕录制权限")
+            # 直接抛出异常，不启动模拟器模式
+            raise
     
     def main(self, page: ft.Page):
         """Flet 主函数"""
@@ -91,71 +79,33 @@ class AndroidMirrorApp:
             fit=ft.ImageFit.CONTAIN,
         )
         
+        # 创建状态文本
+        self.status_text = ft.Text("等待图像...", color="white")
+        
         # 创建主容器
         main_container = ft.Container(
-            content=self.image_widget,
+            content=ft.Column([
+                self.image_widget,
+                self.status_text
+            ]),
             width=400,
             height=800,
             on_click=self.on_image_click,
             on_hover=self.on_image_hover,
+            bgcolor="black",
         )
         
+        # 立即更新UI
         page.add(main_container)
+        page.update()
         
         # 设置键盘事件监听
         page.on_keyboard_event = self.on_keyboard_event
         
-        # 初始化图像数据队列
-        self.image_queue = queue.Queue()
-        
-        # 启动UI更新定时器
-        def ui_update_timer():
-            while True:
-                try:
-                    if not self.image_queue.empty():
-                        image_data = self.image_queue.get_nowait()
-                        if self.image_widget and self.page:
-                            # 直接更新UI组件，让Flet处理线程安全
-                            try:
-                                self.image_widget.src = image_data['src']
-                                self.image_widget.width = image_data['width']
-                                self.image_widget.height = image_data['height']
-                                # 不调用page.update()，让Flet自动处理
-                            except Exception as e:
-                                print(f"UI更新错误: {e}")
-                except queue.Empty:
-                    pass
-                except Exception as e:
-                    print(f"UI更新定时器错误: {e}")
-                time.sleep(0.05)  # 50ms间隔
-        
-        ui_timer_thread = threading.Thread(target=ui_update_timer, daemon=True)
-        ui_timer_thread.start()
-        
         # 显示帮助信息
         self.show_help()
     
-    def start_simulator(self):
-        """启动模拟设备模式"""
-        def simulator_loop():
-            while self.simulator_mode:
-                # 创建模拟帧
-                frame = np.zeros((800, 400, 3), dtype=np.uint8)
-                frame[:] = (50, 50, 50)  # 深灰色背景
-                
-                # 添加一些模拟内容
-                cv2.putText(frame, "Simulator Mode", (50, 100), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv2.putText(frame, "No Android Device", (50, 150), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
-                cv2.putText(frame, "Connected", (50, 200), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
-                
-                self.on_frame(frame)
-                time.sleep(0.1)  # 10 FPS
-        
-        simulator_thread = threading.Thread(target=simulator_loop, daemon=True)
-        simulator_thread.start()
+
 
     def on_frame(self, frame):
         if frame is not None and frame.size > 0:
@@ -190,62 +140,11 @@ class AndroidMirrorApp:
                     self.window_resized = True
                     print(f"窗口大小已调整为: {image_width}x{image_height}")
                 
-                # 处理公共画布渲染 - 将UI元素边框叠加到frame上
-                display_frame = frame.copy()
-                with self.canvas_lock:
-                    if self.public_canvas is not None:
-                        try:
-                            # 确保画布尺寸与frame匹配
-                            if self.public_canvas.shape[:2] == (image_height, image_width):
-                                # 将画布内容叠加到frame上
-                                # 使用加权混合，让原图可见，画布内容作为覆盖层
-                                alpha = 0.6  # 原图透明度
-                                beta = 0.4   # 画布透明度 - 提高边框可见性
-                                display_frame = cv2.addWeighted(display_frame, alpha, self.public_canvas, beta, 0)
-                            else:
-                                # 如果尺寸不匹配，重置画布
-                                print(f"画布尺寸不匹配，重置: 期望{(image_height, image_width)}, 实际{self.public_canvas.shape[:2]}")
-                                self.public_canvas = None
-                        except Exception as e:
-                            print(f"画布渲染错误: {e}")
-                            self.public_canvas = None
+                # 直接使用原始帧，不进行画布叠加
+                display_frame = frame
                 
-                # 将OpenCV图像转换为Flet可显示的base64格式
-                if self.image_widget and self.page:
-                    try:
-                        # 确保数据类型为uint8，避免不必要的类型转换
-                        if display_frame.dtype != np.uint8:
-                            display_frame = display_frame.astype(np.uint8)
-                        
-                        # 直接使用OpenCV的imencode编码BGR数据，避免任何通道转换
-                        # 这是最高效的方法：直接编码原始BGR数据
-                        success, encoded_img = cv2.imencode('.png', display_frame)
-                        if success:
-                            # 直接使用NumPy的tobytes()方法，避免额外的内存拷贝
-                            # 这比PIL + BytesIO的组合更高效
-                            img_str = base64.b64encode(encoded_img.tobytes()).decode()
-                            
-                            # 将图像数据放入队列，由UI更新定时器处理
-                            try:
-                                image_data = {
-                                    'src': f"data:image/png;base64,{img_str}",
-                                    'width': image_width,
-                                    'height': image_height
-                                }
-                                # 清空队列中的旧数据，只保留最新的
-                                while not self.image_queue.empty():
-                                    try:
-                                        self.image_queue.get_nowait()
-                                    except queue.Empty:
-                                        break
-                                self.image_queue.put(image_data)
-                            except Exception as e:
-                                print(f"队列操作错误: {e}")
-                        else:
-                            print("图像编码失败")
-                        
-                    except Exception as e:
-                        print(f"图像转换错误: {e}")
+                # 将OpenCV图像转换为Flet可显示的base64格式并直接更新UI
+                self.update_ui_with_frame(display_frame, image_width, image_height)
                         
             except Exception as e:
                 print("线程出错%s"%(e))
@@ -254,37 +153,46 @@ class AndroidMirrorApp:
         else:
             pass
             # print("收到空帧或无效帧")
+            
+    def update_ui_with_frame(self, display_frame, image_width, image_height):
+        """直接更新UI，不使用队列和定时器"""
+        if self.image_widget and self.page:
+            try:
+                # 确保数据类型为uint8，避免不必要的类型转换
+                if display_frame.dtype != np.uint8:
+                    display_frame = display_frame.astype(np.uint8)
+                
+                # scrcpy的帧数据通常已经是RGB格式，不需要转换
+                # 如果颜色不对，可能需要BGR到RGB的转换
+                # rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
+                rgb_frame = display_frame
+                
+                # 转换为base64编码，避免文件缓存问题
+                _, buffer = cv2.imencode('.jpg', rgb_frame)
+                img_str = base64.b64encode(buffer).decode('utf-8')
+                
+                # 使用base64编码直接更新图像
+                self.image_widget.src_base64 = img_str
+                self.image_widget.width = image_width
+                self.image_widget.height = image_height
+                
+                # 更新状态文本
+                if hasattr(self, 'status_text') and self.status_text:
+                    if not hasattr(self, 'update_count'):
+                        self.update_count = 0
+                    self.update_count += 1
+                    self.status_text.value = f"已更新 {self.update_count} 帧 - {image_width}x{image_height}"
+                
+                try:
+                    # 显式调用page.update()来确保UI更新
+                    self.page.update()
+                    print(f"UI已直接更新: {image_width}x{image_height}")
+                except Exception as e:
+                    # 忽略UI更新错误，可能是UI已关闭
+                    pass
+            except Exception as e:
+                print(f"线程出错{e}")
 
-    def set_public_canvas(self, canvas):
-        """设置公共画布，供其他模块绘制UI元素边框
-        
-        Args:
-            canvas: OpenCV格式的画布(numpy array)，或None清空画布
-        """
-        with self.canvas_lock:
-            self.public_canvas = canvas
-    
-    def get_frame_size(self):
-        """获取当前帧的尺寸，供其他模块创建匹配的画布
-        
-        Returns:
-            tuple: (height, width) 或 None如果未接收到帧
-        """
-        if hasattr(self, 'current_frame') and self.current_frame is not None:
-            return self.current_frame.shape[:2]
-        return None
-    
-    def create_empty_canvas(self):
-        """创建与当前帧尺寸匹配的空画布
-        
-        Returns:
-            numpy.ndarray: 空的BGR画布，或None如果无法创建
-        """
-        frame_size = self.get_frame_size()
-        if frame_size is not None:
-            height, width = frame_size
-            return np.zeros((height, width, 3), dtype=np.uint8)
-        return None
 
 
 
@@ -296,7 +204,7 @@ class AndroidMirrorApp:
         print("="*50)
         print("💡 提示:")
         print("  • 基础scrcpy屏幕镜像功能")
-        print("  • 支持公共画布用于外部UI绘制")
+        print("  • 支持鼠标点击和键盘控制")
         print("="*50)
 
 
@@ -305,8 +213,9 @@ class AndroidMirrorApp:
         if self.client is None:
             return
         
-        x = e.local_x
-        y = e.local_y
+        # 安全获取坐标
+        x = getattr(e, 'local_x', 0)
+        y = getattr(e, 'local_y', 0)
         
         # 更新鼠标位置
         self.mouse_x = x
@@ -322,8 +231,9 @@ class AndroidMirrorApp:
         if self.client is None:
             return
         
-        x = e.local_x
-        y = e.local_y
+        # 使用正确的属性名
+        x = getattr(e, 'local_x', 0)
+        y = getattr(e, 'local_y', 0)
         
         # 更新鼠标位置
         self.mouse_x = x
@@ -409,5 +319,10 @@ if __name__ == '__main__':
     # 创建应用实例
     app = AndroidMirrorApp(device_id)
     
-    # 启动Flet应用
-    ft.app(target=app.main)
+    try:
+        # 启动Flet应用，指定端口
+        ft.app(target=app.main, port=8550)
+    except Exception as e:
+        print(f"主程序异常: {e}")
+        import traceback
+        traceback.print_exc()
