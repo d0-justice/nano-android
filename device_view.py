@@ -346,10 +346,12 @@ class DeviceView(ft.Container):
             # scrcpy的滚动方向与常规相反，所以需要取负值
             scroll_x = int(-delta_x)
             scroll_y = int(-delta_y)
-            self.client.control.scroll(device_x, device_y, scroll_x/2, scroll_y/2)
+            self.client.control.scroll(device_x, device_y, scroll_x/5, scroll_y/5) 
             time.sleep(0.1)
-            self.client.control.scroll(device_x, device_y, scroll_x/2, scroll_y/2)
-                
+            self.client.control.scroll(device_x, device_y, scroll_x/5, scroll_y/5)
+
+ 
+
         except Exception as ex:
             print(f"❌ 滚动操作失败: {ex}")
    
