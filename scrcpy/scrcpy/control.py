@@ -97,16 +97,26 @@ class ControlSender:
             h: horizontal movement
             v: vertical movement
         """
-
         x, y = max(x, 0), max(y, 0)
+        
+        # 滚动值放大倍数，针对scrcpy 3.3.2版本优化
+        scroll_multiplier = 50
+        h_scaled = int(h * scroll_multiplier)
+        v_scaled = int(v * scroll_multiplier)
+        
+        # 限制在int16范围内
+        h_scroll = max(-32767, min(32767, h_scaled))
+        v_scroll = max(-32767, min(32767, v_scaled))
+        
         return struct.pack(
-            ">iiHHii",
+            ">iiHHhhI",
             int(x),
             int(y),
             int(self.parent.resolution[0]),
             int(self.parent.resolution[1]),
-            int(h),
-            int(v),
+            h_scroll,
+            v_scroll,
+            0,  # buttons状态
         )
 
     @inject(const.TYPE_BACK_OR_SCREEN_ON)
