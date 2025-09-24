@@ -47,9 +47,8 @@ class DeviceScreenshot(ft.Container):
                 spread_radius=0,
                 blur_radius=8,
                 color=ft.Colors.with_opacity(0.3, ft.Colors.BLACK),
-                offset=ft.Offset(1, 2)  # 右下方向阴影
+                offset=ft.Offset(1, 2)  # 右下方向
             ),
-            animate=ft.Animation(300, ft.AnimationCurve.EASE_OUT),  # 添加动画效果
             **kwargs
         )
     
