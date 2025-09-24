@@ -36,8 +36,18 @@ class DeviceView(ft.Container):
         self.mouse_x = 0
         self.mouse_y = 0
         self.ori_x = 0
-
-  
+        
+        # 滚轮防抖相关变量
+        self.last_scroll_time = 0
+        self.scroll_debounce_delay = 0.2  # 200ms防抖延迟
+        self.last_scroll_direction = None
+        
+        # 事件时间控制相关属性
+        self.last_event_time = 0
+        self.min_event_interval = 16  # 16ms，约60FPS
+        
+        # 手势识别相关属性
+        
         
         # 创建设备屏幕图像控件 - 使用base64格式的占位符图像
         placeholder_image = self._create_placeholder_image()
@@ -321,78 +331,73 @@ class DeviceView(ft.Container):
         print(f"DeviceView资源清理完成: {self.device_name}")
         
     def _on_scroll(self, e):
-        """处理滚轮事件 - 基于qtscrcpy的实现原理"""
+        """处理滚轮事件 - 参考QtScrcpy的wheelEvent实现"""
         if not self.client or not self.client.control:
             print("客户端未连接，跳过滚轮事件")
             return
         
-        # 获取滚轮增量
-        delta_x = getattr(e, 'scroll_delta_x', 0)
-        delta_y = getattr(e, 'scroll_delta_y', 0)
+        # 滚轮事件防抖处理 - 200ms内不重复处理
+        current_time = time.time()
+        if current_time - self.last_scroll_time < self.scroll_debounce_delay:
+            return
+        self.last_scroll_time = current_time
         
-        # 获取鼠标位置
+        # 获取滚轮增量 - 参考QtScrcpy使用angleDelta
+        # 在QtScrcpy中，wheelEvent使用event->angleDelta()获取增量
+        delta_x = getattr(e, 'angle_delta_x', 0)
+        delta_y = getattr(e, 'angle_delta_y', 0)
+        
+        # 如果angle_delta不存在，尝试其他属性
+        if delta_x == 0 and delta_y == 0:
+            delta_x = getattr(e, 'scroll_delta_x', 0)
+            delta_y = getattr(e, 'scroll_delta_y', 0)
+        
+        # 获取鼠标位置 - 对应QtScrcpy中的event->pos()
         x = getattr(e, 'local_x', 0)
         y = getattr(e, 'local_y', 0)
         
-        print(f"滚轮事件: x={x}, y={y}, delta_x={delta_x}, delta_y={delta_y}")
+        print(f"滚轮事件: pos=({x}, {y}), angleDelta=({delta_x}, {delta_y})")
         
-        # 如果滚动增量太小，忽略
-        if abs(delta_x) < 0.1 and abs(delta_y) < 0.1:
-            return
-        
-        # 获取设备分辨率
+        # 获取设备分辨率 - 对应QtScrcpy中的frameSize()
         try:
             device_width = self.client.resolution[0] if hasattr(self.client, 'resolution') and self.client.resolution else 800
             device_height = self.client.resolution[1] if hasattr(self.client, 'resolution') and self.client.resolution else 600
         except:
             device_width, device_height = 800, 600
         
-        # 计算设备坐标
+        # 计算设备坐标 - 对应QtScrcpy中的坐标转换
         touch_x = int(x)
         touch_y = int(y)
         
-        # 基于qtscrcpy的滚动参数设置
-        # 滚动距离：屏幕高度的3%，提供适中的滚动效果
-        scroll_distance = int(device_height * 0.03)
-        
-        # 滑动参数：使用更平滑的滑动
-        move_step_length = 15  # 每步15px，比之前稍大
-        move_steps_delay = 0.01  # 10ms延迟，更快的响应
+        # 使用简单的固定滚动距离 - 对应QtScrcpy中的滚动步长
+        scroll_distance = 16  # 固定16像素的滚动距离
         
         try:
-            # 垂直滚动（qtscrcpy风格：滚轮方向与页面滚动方向一致）
+            # 垂直滚动 - 对应QtScrcpy中的垂直滚动处理
             if abs(delta_y) > abs(delta_x):  # 垂直滚动优先
                 if delta_y > 0:  # 向上滚轮 -> 页面向下滚动
                     start_y = touch_y
                     end_y = max(0, touch_y - scroll_distance)
                     print(f"滚轮向上 -> 页面向下滚动: swipe({touch_x}, {start_y}) -> ({touch_x}, {end_y})")
-                    self.client.control.swipe(touch_x, start_y, touch_x, end_y, 
-                                            move_step_length=move_step_length, 
-                                            move_steps_delay=move_steps_delay)
+                    self.client.control.swipe(touch_x, start_y, touch_x, end_y)
                 elif delta_y < 0:  # 向下滚轮 -> 页面向上滚动
                     start_y = touch_y
                     end_y = min(device_height, touch_y + scroll_distance)
                     print(f"滚轮向下 -> 页面向上滚动: swipe({touch_x}, {start_y}) -> ({touch_x}, {end_y})")
-                    self.client.control.swipe(touch_x, start_y, touch_x, end_y, 
-                                            move_step_length=move_step_length, 
-                                            move_steps_delay=move_steps_delay)
+                    self.client.control.swipe(touch_x, start_y, touch_x, end_y)
             
-            # 水平滚动
+            # 水平滚动 - 对应QtScrcpy中的水平滚动处理
             elif abs(delta_x) > 0.1:  # 水平滚动
                 if delta_x > 0:  # 向右滚轮 -> 页面向左滚动
                     start_x = touch_x
                     end_x = max(0, touch_x - scroll_distance)
                     print(f"滚轮向右 -> 页面向左滚动: swipe({start_x}, {touch_y}) -> ({end_x}, {touch_y})")
-                    self.client.control.swipe(start_x, touch_y, end_x, touch_y, 
-                                            move_step_length=move_step_length, 
-                                            move_steps_delay=move_steps_delay)
+                    self.client.control.swipe(start_x, touch_y, end_x, touch_y)
                 elif delta_x < 0:  # 向左滚轮 -> 页面向右滚动
                     start_x = touch_x
                     end_x = min(device_width, touch_x + scroll_distance)
                     print(f"滚轮向左 -> 页面向右滚动: swipe({start_x}, {touch_y}) -> ({end_x}, {touch_y})")
-                    self.client.control.swipe(start_x, touch_y, end_x, touch_y, 
-                                            move_step_length=move_step_length, 
-                                            move_steps_delay=move_steps_delay)
+                    self.client.control.swipe(start_x, touch_y, end_x, touch_y)
                 
         except Exception as ex:
             print(f"发送滚动命令时出错: {ex}")
@@ -523,9 +528,9 @@ class DeviceView(ft.Container):
             distance = math.sqrt(dx * dx + dy * dy)
             
             # 简单的手势分类
-            if distance < self.min_swipe_distance and duration < self.max_tap_duration:
+            if distance < 50 and duration < 500:
                 gesture_type = "tap"
-            elif distance >= self.min_swipe_distance:
+            elif distance >= 50:
                 gesture_type = "swipe"
                 # 计算速度用于惯性效果
                 velocity_x = dx / (duration / 1000) if duration > 0 else 0
@@ -599,10 +604,10 @@ class DeviceView(ft.Container):
         gesture_type = "unknown"
         
         # 判断基本手势类型
-        if distance < self.min_swipe_distance:
-            if duration < self.max_tap_duration:
+        if distance < 50:
+            if duration < 500:
                 gesture_type = "tap"
-            elif duration > self.long_press_duration:
+            elif duration > 1000:
                 gesture_type = "long_press"
             else:
                 gesture_type = "short_press"
@@ -617,7 +622,7 @@ class DeviceView(ft.Container):
         
         # 判断滑动方向
         direction = "none"
-        if distance >= self.min_swipe_distance:
+        if distance >= 50:
             abs_dx = abs(velocity_x)
             abs_dy = abs(velocity_y)
             

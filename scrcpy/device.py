@@ -276,10 +276,6 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
         # 获取滚轮角度增量
         angle_delta = a0.angleDelta().y()
         
-        # 如果角度增量太小，忽略
-        if abs(angle_delta) < self.scroll_min_threshold:
-            return
-            
         # 计算滚动距离（根据角度增量调整敏感度）
         scroll_distance = int(angle_delta * self.scroll_sensitivity)
         
