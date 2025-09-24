@@ -33,6 +33,7 @@ class DeviceView(ft.Container):
         self.last_mouse_y = 0
         self.key_alt_down = False
         self.key_ctrl_down = False
+        self.key_shift_down = False
         self.mouse_x = 0
         self.mouse_y = 0
         self.ori_x = 0
@@ -507,3 +508,204 @@ class DeviceView(ft.Container):
         y = int(getattr(e, 'local_y', 0))
         # 不打印悬停事件，避免日志过多
         # print(f"GestureDetector - 鼠标悬停: x={x}, y={y}")
+    
+    def _flet_key_to_android_keycode(self, flet_key: str) -> int:
+        """将Flet键盘事件的key转换为Android按键码"""
+        # 字母键映射
+        if len(flet_key) == 1 and flet_key.isalpha():
+            return const.KEYCODE_A + ord(flet_key.upper()) - ord('A')
+        
+        # 数字键映射
+        if len(flet_key) == 1 and flet_key.isdigit():
+            return const.KEYCODE_0 + int(flet_key)
+        
+        # 特殊键映射
+        key_mapping = {
+            'Space': const.KEYCODE_SPACE,
+            'Enter': const.KEYCODE_ENTER,
+            'Backspace': const.KEYCODE_DEL,
+            'Delete': const.KEYCODE_FORWARD_DEL,
+            'Tab': const.KEYCODE_TAB,
+            'Escape': const.KEYCODE_ESCAPE,
+            'Arrow Up': const.KEYCODE_DPAD_UP,
+            'Arrow Down': const.KEYCODE_DPAD_DOWN,
+            'Arrow Left': const.KEYCODE_DPAD_LEFT,
+            'Arrow Right': const.KEYCODE_DPAD_RIGHT,
+            'Home': const.KEYCODE_HOME,
+            'End': const.KEYCODE_MOVE_END,
+            'Page Up': const.KEYCODE_PAGE_UP,
+            'Page Down': const.KEYCODE_PAGE_DOWN,
+            'Insert': const.KEYCODE_INSERT,
+            'F1': const.KEYCODE_F1,
+            'F2': const.KEYCODE_F2,
+            'F3': const.KEYCODE_F3,
+            'F4': const.KEYCODE_F4,
+            'F5': const.KEYCODE_F5,
+            'F6': const.KEYCODE_F6,
+            'F7': const.KEYCODE_F7,
+            'F8': const.KEYCODE_F8,
+            'F9': const.KEYCODE_F9,
+            'F10': const.KEYCODE_F10,
+            'F11': const.KEYCODE_F11,
+            'F12': const.KEYCODE_F12,
+            'Shift Left': const.KEYCODE_SHIFT_LEFT,
+            'Shift Right': const.KEYCODE_SHIFT_RIGHT,
+            'Control Left': const.KEYCODE_CTRL_LEFT,
+            'Control Right': const.KEYCODE_CTRL_RIGHT,
+            'Alt Left': const.KEYCODE_ALT_LEFT,
+            'Alt Right': const.KEYCODE_ALT_RIGHT,
+            'Meta Left': const.KEYCODE_META_LEFT,
+            'Meta Right': const.KEYCODE_META_RIGHT,
+            'Caps Lock': const.KEYCODE_CAPS_LOCK,
+            'Num Lock': const.KEYCODE_NUM_LOCK,
+            'Scroll Lock': const.KEYCODE_SCROLL_LOCK,
+            # 标点符号
+            ',': const.KEYCODE_COMMA,
+            '.': const.KEYCODE_PERIOD,
+            '/': const.KEYCODE_SLASH,
+            ';': const.KEYCODE_SEMICOLON,
+            "'": const.KEYCODE_APOSTROPHE,
+            '[': const.KEYCODE_LEFT_BRACKET,
+            ']': const.KEYCODE_RIGHT_BRACKET,
+            '\\': const.KEYCODE_BACKSLASH,
+            '-': const.KEYCODE_MINUS,
+            '=': const.KEYCODE_EQUALS,
+            '`': const.KEYCODE_GRAVE,
+            # 数字键盘
+            'Numpad 0': const.KEYCODE_NUMPAD_0,
+            'Numpad 1': const.KEYCODE_NUMPAD_1,
+            'Numpad 2': const.KEYCODE_NUMPAD_2,
+            'Numpad 3': const.KEYCODE_NUMPAD_3,
+            'Numpad 4': const.KEYCODE_NUMPAD_4,
+            'Numpad 5': const.KEYCODE_NUMPAD_5,
+            'Numpad 6': const.KEYCODE_NUMPAD_6,
+            'Numpad 7': const.KEYCODE_NUMPAD_7,
+            'Numpad 8': const.KEYCODE_NUMPAD_8,
+            'Numpad 9': const.KEYCODE_NUMPAD_9,
+            'Numpad Divide': const.KEYCODE_NUMPAD_DIVIDE,
+            'Numpad Multiply': const.KEYCODE_NUMPAD_MULTIPLY,
+            'Numpad Subtract': const.KEYCODE_NUMPAD_SUBTRACT,
+            'Numpad Add': const.KEYCODE_NUMPAD_ADD,
+            'Numpad Decimal': const.KEYCODE_NUMPAD_DOT,
+            'Numpad Enter': const.KEYCODE_NUMPAD_ENTER,
+        }
+        
+        return key_mapping.get(flet_key, const.KEYCODE_UNKNOWN)
+    
+    def keyPressEvent(self, e):
+        """处理键盘按键事件"""
+        print(f"🔑 键盘事件: key='{e.key}', shift={e.shift}, ctrl={e.ctrl}, alt={e.alt}")
+        
+        # 详细检查设备连接状态
+        if not self.client:
+            print("❌ 错误: client对象为None")
+            return
+        
+        if not self.client.alive:
+            print("❌ 错误: client未连接或已断开")
+            return
+            
+        if not hasattr(self.client, 'control'):
+            print("❌ 错误: client没有control属性")
+            return
+            
+        if not self.client.control:
+            print("❌ 错误: control对象为None")
+            return
+            
+        print(f"✅ 设备连接正常，control对象存在")
+        
+        try:
+            # 处理修饰键状态
+            if e.key in ['Shift Left', 'Shift Right']:
+                self.key_shift_down = True
+                return
+            elif e.key in ['Control Left', 'Control Right']:
+                self.key_ctrl_down = True
+                return
+            elif e.key in ['Alt Left', 'Alt Right']:
+                self.key_alt_down = True
+                return
+            
+            # 系统功能键使用keycode方法
+            system_keys = {
+                'Escape': const.KEYCODE_BACK,
+                'Home': const.KEYCODE_HOME,
+                'Menu': const.KEYCODE_MENU,
+                'Backspace': const.KEYCODE_DEL,
+                'Delete': const.KEYCODE_FORWARD_DEL,
+                'Enter': const.KEYCODE_ENTER,
+                'Tab': const.KEYCODE_TAB,
+                'Arrow Up': const.KEYCODE_DPAD_UP,
+                'Arrow Down': const.KEYCODE_DPAD_DOWN,
+                'Arrow Left': const.KEYCODE_DPAD_LEFT,
+                'Arrow Right': const.KEYCODE_DPAD_RIGHT,
+                'Page Up': const.KEYCODE_PAGE_UP,
+                'Page Down': const.KEYCODE_PAGE_DOWN,
+                'F1': const.KEYCODE_F1,
+                'F2': const.KEYCODE_F2,
+                'F3': const.KEYCODE_F3,
+                'F4': const.KEYCODE_F4,
+                'F5': const.KEYCODE_F5,
+                'F6': const.KEYCODE_F6,
+                'F7': const.KEYCODE_F7,
+                'F8': const.KEYCODE_F8,
+                'F9': const.KEYCODE_F9,
+                'F10': const.KEYCODE_F10,
+                'F11': const.KEYCODE_F11,
+                'F12': const.KEYCODE_F12,
+            }
+            
+            if e.key in system_keys:
+                keycode = system_keys[e.key]
+                print(f"🎮 发送系统按键: {e.key} (keycode: {keycode})")
+                self.client.control.keycode(keycode, const.ACTION_DOWN)
+                self.client.control.keycode(keycode, const.ACTION_UP)
+                return
+            
+            # 功能按键使用keycode方法（不转换为字符）
+            function_keys = {
+                'Control Left', 'Control Right', 'Shift Left', 'Shift Right', 
+                'Alt Left', 'Alt Right', 'Meta Left', 'Meta Right',
+                'Caps Lock', 'Num Lock', 'Scroll Lock', 'Insert', 'Print Screen',
+                'Pause', 'Context Menu'
+            }
+            
+            if e.key in function_keys:
+                # 这些功能键使用keycode方法
+                android_keycode = self._flet_key_to_android_keycode(e.key)
+                if android_keycode != const.KEYCODE_UNKNOWN:
+                    print(f"🎮 发送功能按键: {e.key} (keycode: {android_keycode})")
+                    self.client.control.keycode(android_keycode, const.ACTION_DOWN)
+                    self.client.control.keycode(android_keycode, const.ACTION_UP)
+                else:
+                    print(f"❓ 未知功能按键: '{e.key}'")
+                return
+            
+            # 只有可打印的单字符才使用text方法
+            if (len(e.key) == 1 and e.key.isprintable()):
+                print(f"📝 发送文本: '{e.key}'")
+                result = self.client.control.text(e.key)
+                print(f"📤 文本发送结果: {len(result) if result else 0} bytes")
+            else:
+                # 其他未处理的按键尝试使用keycode方法
+                android_keycode = self._flet_key_to_android_keycode(e.key)
+                if android_keycode != const.KEYCODE_UNKNOWN:
+                    print(f"🎮 发送其他按键: {e.key} (keycode: {android_keycode})")
+                    self.client.control.keycode(android_keycode, const.ACTION_DOWN)
+                    self.client.control.keycode(android_keycode, const.ACTION_UP)
+                else:
+                    print(f"❓ 未知按键: '{e.key}'，忽略")
+                        
+        except Exception as ex:
+            print(f"键盘事件发送失败: {ex}")
+    
+    def keyReleaseEvent(self, e):
+        """处理键盘释放事件"""
+        # 处理修饰键状态
+        if e.key in ['Shift Left', 'Shift Right']:
+            self.key_shift_down = False
+        elif e.key in ['Control Left', 'Control Right']:
+            self.key_ctrl_down = False
+        elif e.key in ['Alt Left', 'Alt Right']:
+            self.key_alt_down = False
