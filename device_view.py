@@ -7,6 +7,7 @@ import time
 import numpy as np
 import cv2
 import base64
+import math
 
 # 添加scrcpy模块路径
 sys.path.append(os.path.join(os.path.dirname(__file__), 'scrcpy'))
@@ -37,6 +38,34 @@ class DeviceView(ft.Container):
         self.ori_x = 0
         self.ori_y = 0
         
+        # 滚轮防抖动机制
+        self.scroll_timer = None
+        self.accumulated_delta_x = 0
+        self.accumulated_delta_y = 0
+        self.scroll_position_x = 0
+        self.scroll_position_y = 0
+        
+        # 手势识别相关属性
+        self.gesture_start_time = None
+        self.gesture_start_pos = None
+        self.gesture_velocity = (0, 0)
+        self.min_swipe_distance = 30
+        self.max_tap_duration = 300
+        
+        # 事件时间控制
+        self.last_event_time = 0
+        self.min_event_interval = 16  # 约60fps，16ms间隔
+        
+        # 扩展手势识别属性
+        self.slow_swipe_velocity = 100
+        self.fast_swipe_velocity = 500
+        self.long_press_duration = 800
+        self.double_tap_interval = 300
+        
+        # 复杂手势识别
+        self.gesture_history = []
+        self.max_history_length = 10
+        
         # 创建设备屏幕图像控件 - 使用base64格式的占位符图像
         placeholder_image = self._create_placeholder_image()
         self.device_image = ft.Image(
@@ -58,6 +87,7 @@ class DeviceView(ft.Container):
             on_pan_start=self._on_pan_start,
             on_pan_update=self._on_pan_update,
             on_pan_end=self._on_pan_end,
+            on_scroll=self._on_scroll,  # 添加滚轮事件监听
         )
         
         # 创建简化的设备屏幕显示界面 - 移除按钮
@@ -114,36 +144,6 @@ class DeviceView(ft.Container):
         img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         
         return img_base64
-    
-    def _on_test_update_click(self, e):
-        """测试更新图像按钮点击事件"""
-        # 生成一个测试图像
-        import base64
-        import io
-        from PIL import Image, ImageDraw
-        import time
-        
-        # 创建一个简单的测试图像
-        img = Image.new('RGB', (280, 350), color='lightgreen')
-        draw = ImageDraw.Draw(img)
-        
-        # 添加文本
-        draw.text((10, 10), f"Test Image {int(time.time())}", fill='black')
-        draw.text((10, 40), "Manual Update", fill='red')
-        draw.text((10, 70), "Android Device", fill='blue')
-        
-        # 添加一些图形
-        draw.rectangle([20, 100, 260, 200], outline='red', width=3)
-        draw.ellipse([50, 120, 230, 180], outline='blue', width=2)
-        
-        # 转换为base64
-        buffer = io.BytesIO()
-        img.save(buffer, format='PNG')
-        img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-        
-        # 更新图像
-        self.update_device_image(img_base64)
-        print("Manual test image update triggered")
     
     def _on_connect_click(self, e):
         """连接设备按钮点击事件"""
@@ -346,7 +346,114 @@ class DeviceView(ft.Container):
             self.client = None
             print(f"客户端已停止: {self.device_name}")
         print(f"DeviceView资源清理完成: {self.device_name}")
+        
+        # 清理滚轮定时器
+        if hasattr(self, 'scroll_timer') and self.scroll_timer:
+            self.scroll_timer.cancel()
+            self.scroll_timer = None
     
+    def _on_scroll(self, e):
+        """处理滚轮事件，使用防抖动机制"""
+        import threading
+        
+        delta_x = getattr(e, 'scroll_delta_x', 0)
+        delta_y = getattr(e, 'scroll_delta_y', 0)
+        
+        # 获取鼠标在设备屏幕上的坐标
+        x = getattr(e, 'local_x', 0)
+        y = getattr(e, 'local_y', 0)
+        
+        print(f"滚轮事件: x={x}, y={y}, delta_x={delta_x}, delta_y={delta_y}")
+        
+        # 累积滚动增量
+        self.accumulated_delta_x += delta_x
+        self.accumulated_delta_y += delta_y
+        self.scroll_position_x = x
+        self.scroll_position_y = y
+        
+        # 如果已有定时器，取消它
+        if self.scroll_timer:
+            self.scroll_timer.cancel()
+        
+        # 设置新的定时器，100ms后执行滚动（减少延迟）
+        self.scroll_timer = threading.Timer(0.1, self._execute_scroll)
+        self.scroll_timer.start()
+    
+    def _execute_scroll(self):
+        """执行实际的滚动操作（防抖动后）"""
+        if not self.client or not self.client.control:
+            print("客户端未连接，跳过滚轮事件")
+            return
+        
+        # 获取累积的滚动增量
+        delta_x = self.accumulated_delta_x
+        delta_y = self.accumulated_delta_y
+        x = self.scroll_position_x
+        y = self.scroll_position_y
+        
+        # 重置累积值
+        self.accumulated_delta_x = 0
+        self.accumulated_delta_y = 0
+        
+        print(f"执行滚动: x={x}, y={y}, 累积delta_x={delta_x}, 累积delta_y={delta_y}")
+        
+        # 获取设备分辨率
+        try:
+            device_width = self.client.resolution[0] if hasattr(self.client, 'resolution') and self.client.resolution else 800
+            device_height = self.client.resolution[1] if hasattr(self.client, 'resolution') and self.client.resolution else 600
+        except:
+            device_width, device_height = 800, 600
+        
+        print(f"设备分辨率: {device_width}x{device_height}")
+        
+        # 计算设备坐标
+        touch_x = int(x)
+        touch_y = int(y)
+        
+        # 计算滚动距离（屏幕高度的2%，减小滚动幅度）
+        scroll_distance = int(device_height * 0.02)
+        
+        # 计算move_step_length（固定值20px，减小步长）
+        move_step_length = 20
+        
+        try:
+            # 垂直滚动（反转方向）
+            if delta_y > 0:  # 向上滚轮 -> 页面向下滚动（手指向上滑动）
+                start_y = touch_y
+                end_y = max(0, touch_y - scroll_distance)  # 向上滑动
+                print(f"滚轮向上 -> 页面向下滚动: swipe({touch_x}, {start_y}) -> ({touch_x}, {end_y}), step_length={move_step_length}")
+                
+                # 使用swipe方法，减小移动延迟
+                self.client.control.swipe(touch_x, start_y, touch_x, end_y, move_step_length=move_step_length, move_steps_delay=0.2)
+                
+            elif delta_y < 0:  # 向下滚轮 -> 页面向上滚动（手指向下滑动）
+                start_y = touch_y
+                end_y = min(device_height, touch_y + scroll_distance)  # 向下滑动
+                print(f"滚轮向下 -> 页面向上滚动: swipe({touch_x}, {start_y}) -> ({touch_x}, {end_y}), step_length={move_step_length}")
+                
+                # 使用swipe方法，减小移动延迟
+                self.client.control.swipe(touch_x, start_y, touch_x, end_y, move_step_length=move_step_length, move_steps_delay=0.2)
+            
+            # 水平滚动（反转方向）
+            if delta_x > 0:  # 向右滚轮 -> 页面向左滚动（手指向右滑动）
+                start_x = touch_x
+                end_x = min(device_width, touch_x + scroll_distance)  # 向右滑动
+                print(f"滚轮向右 -> 页面向左滚动: swipe({start_x}, {touch_y}) -> ({end_x}, {touch_y}), step_length={move_step_length}")
+                
+                # 使用swipe方法，减小移动延迟
+                self.client.control.swipe(start_x, touch_y, end_x, touch_y, move_step_length=move_step_length, move_steps_delay=0.2)
+                
+            elif delta_x < 0:  # 向左滚轮 -> 页面向右滚动（手指向左滑动）
+                start_x = touch_x
+                end_x = max(0, touch_x - scroll_distance)  # 向左滑动
+                print(f"滚轮向左 -> 页面向右滚动: swipe({start_x}, {touch_y}) -> ({end_x}, {touch_y}), step_length={move_step_length}")
+                
+                # 使用swipe方法，减小移动延迟
+                self.client.control.swipe(start_x, touch_y, end_x, touch_y, move_step_length=move_step_length, move_steps_delay=0.2)
+                
+        except Exception as ex:
+            print(f"发送swipe滚动命令时出错: {ex}")
+
     # Flet事件处理器 - 使用GestureDetector的事件
     def _on_tap_down(self, e):
         """处理点击事件"""
@@ -416,6 +523,10 @@ class DeviceView(ft.Container):
         x = getattr(e, 'local_x', 0)
         y = getattr(e, 'local_y', 0)
         
+        # 记录手势开始信息
+        self.gesture_start_time = time.time() * 1000  # 转换为毫秒
+        self.gesture_start_pos = (x, y)
+        
         # 更新最后记录的鼠标位置
         self.last_mouse_x = x
         self.last_mouse_y = y
@@ -449,18 +560,234 @@ class DeviceView(ft.Container):
         self.mouseMoveEvent(event_data)
     
     def _on_pan_end(self, e):
-        """处理拖拽结束事件（鼠标释放）"""
+        """拖拽结束事件处理"""
         if not self.client or not self.client.alive:
+            print("客户端未连接或不可用")
             return
+        
+        # 安全获取拖拽结束时的坐标
+        x = getattr(e, 'local_x', self.last_mouse_x)
+        y = getattr(e, 'local_y', self.last_mouse_y)
+        
+        # 记录手势结束时间和位置
+        end_time = time.time() * 1000
+        
+        # 简化的手势识别逻辑
+        if self.gesture_start_time and self.gesture_start_pos:
+            duration = end_time - self.gesture_start_time
+            dx = x - self.gesture_start_pos[0]
+            dy = y - self.gesture_start_pos[1]
+            distance = math.sqrt(dx * dx + dy * dy)
             
-        # DragEndEvent没有local_x和local_y属性，使用最后记录的鼠标位置
+            # 简单的手势分类
+            if distance < self.min_swipe_distance and duration < self.max_tap_duration:
+                gesture_type = "tap"
+            elif distance >= self.min_swipe_distance:
+                gesture_type = "swipe"
+                # 计算速度用于惯性效果
+                velocity_x = dx / (duration / 1000) if duration > 0 else 0
+                velocity_y = dy / (duration / 1000) if duration > 0 else 0
+                velocity_magnitude = math.sqrt(velocity_x * velocity_x + velocity_y * velocity_y)
+                
+                print(f"滑动手势: 距离={distance:.1f}px, 时长={duration:.0f}ms, 速度={velocity_magnitude:.1f}px/s")
+                
+                # 对于快速滑动，添加简单的惯性效果
+                if velocity_magnitude > 800:  # 提高快速滑动阈值
+                    self._apply_simple_inertia(x, y, velocity_x, velocity_y)
+            else:
+                gesture_type = "unknown"
+            
+            print(f"手势识别: {gesture_type}")
+        
+        # 发送鼠标释放事件
         event_data = {
-            'x': self.last_mouse_x,
-            'y': self.last_mouse_y,
+            'x': x,
+            'y': y,
             'button': 'left'
         }
         print(f"拖拽结束: x={event_data['x']}, y={event_data['y']}")
         self.mouseReleaseEvent(event_data)
+    
+    def _apply_simple_inertia(self, start_x, start_y, velocity_x, velocity_y):
+        """应用简化的惯性滑动效果"""
+        if not self.client or not self.client.alive:
+            return
+            
+        # 简化的惯性参数
+        steps = 3  # 减少步数
+        decay = 0.7  # 衰减系数
+        
+        def inertia_step(step):
+            if step >= steps:
+                return
+                
+            # 计算衰减后的位移
+            factor = decay ** step
+            offset_x = velocity_x * 0.02 * factor  # 减小位移量
+            offset_y = velocity_y * 0.02 * factor
+            
+            next_x = int(start_x + offset_x)
+            next_y = int(start_y + offset_y)
+            
+            # 边界检查
+            if hasattr(self, 'device_image') and self.device_image:
+                image_width = getattr(self.device_image, 'width', 0) or 400
+                image_height = getattr(self.device_image, 'height', 0) or 800
+                next_x = max(0, min(next_x, image_width))
+                next_y = max(0, min(next_y, image_height))
+            
+            try:
+                self.client.control.touch(next_x, next_y, const.ACTION_MOVE)
+            except Exception as e:
+                print(f"惯性滑动失败: {e}")
+                return
+            
+            # 延迟执行下一步
+            timer = threading.Timer(0.05, lambda: inertia_step(step + 1))
+            timer.start()
+        
+        # 开始惯性效果
+        inertia_step(0)
+    
+    def _classify_gesture(self, distance, duration, velocity_x, velocity_y):
+        """分类手势类型"""
+        velocity_magnitude = math.sqrt(velocity_x * velocity_x + velocity_y * velocity_y)
+        
+        gesture_type = "unknown"
+        
+        # 判断基本手势类型
+        if distance < self.min_swipe_distance:
+            if duration < self.max_tap_duration:
+                gesture_type = "tap"
+            elif duration > self.long_press_duration:
+                gesture_type = "long_press"
+            else:
+                gesture_type = "short_press"
+        else:
+            # 滑动手势分类
+            if velocity_magnitude < self.slow_swipe_velocity:
+                gesture_type = "slow_swipe"
+            elif velocity_magnitude > self.fast_swipe_velocity:
+                gesture_type = "fast_swipe"
+            else:
+                gesture_type = "normal_swipe"
+        
+        # 判断滑动方向
+        direction = "none"
+        if distance >= self.min_swipe_distance:
+            abs_dx = abs(velocity_x)
+            abs_dy = abs(velocity_y)
+            
+            if abs_dx > abs_dy * 2:  # 主要是水平方向
+                direction = "right" if velocity_x > 0 else "left"
+            elif abs_dy > abs_dx * 2:  # 主要是垂直方向
+                direction = "down" if velocity_y > 0 else "up"
+            else:
+                # 对角线方向
+                if velocity_x > 0 and velocity_y > 0:
+                    direction = "down_right"
+                elif velocity_x > 0 and velocity_y < 0:
+                    direction = "up_right"
+                elif velocity_x < 0 and velocity_y > 0:
+                    direction = "down_left"
+                else:
+                    direction = "up_left"
+        
+        return gesture_type, direction, velocity_magnitude
+    
+    def _handle_gesture(self, gesture_type, direction, velocity_magnitude, start_pos, end_pos):
+        """处理不同类型的手势"""
+        print(f"手势处理: 类型={gesture_type}, 方向={direction}, 速度={velocity_magnitude:.1f}px/s")
+        
+        # 记录手势历史
+        gesture_info = {
+            'type': gesture_type,
+            'direction': direction,
+            'velocity': velocity_magnitude,
+            'start_pos': start_pos,
+            'end_pos': end_pos,
+            'timestamp': time.time()
+        }
+        
+        self.gesture_history.append(gesture_info)
+        if len(self.gesture_history) > self.max_history_length:
+            self.gesture_history.pop(0)
+        
+        # 根据手势类型执行不同的处理
+        if gesture_type == "fast_swipe":
+            print(f"执行快速滑动: {direction}方向")
+            # 快速滑动已经在_on_pan_end中处理了惯性效果
+            
+        elif gesture_type == "slow_swipe":
+            print(f"执行慢速滑动: {direction}方向")
+            # 慢速滑动可以添加更精确的控制
+            
+        elif gesture_type == "long_press":
+            print(f"执行长按操作")
+            # 可以触发右键菜单或特殊功能
+            
+        elif gesture_type == "tap":
+            print(f"执行点击操作")
+            # 普通点击已经在现有代码中处理
+        
+        # 检测复合手势（如双击滑动等）
+        self._detect_complex_gestures()
+    
+    def _detect_complex_gestures(self):
+        """检测复合手势"""
+        if len(self.gesture_history) < 2:
+            return
+            
+        current_time = time.time()
+        recent_gestures = [g for g in self.gesture_history if current_time - g['timestamp'] < 1.0]  # 1秒内的手势
+        
+        if len(recent_gestures) >= 2:
+            # 检测双击滑动
+            if (recent_gestures[-2]['type'] == 'tap' and 
+                recent_gestures[-1]['type'] in ['fast_swipe', 'normal_swipe', 'slow_swipe']):
+                print("检测到双击滑动手势")
+                # 可以触发特殊的滑动效果
+                
+            # 检测连续滑动
+            elif (recent_gestures[-2]['type'] in ['fast_swipe', 'normal_swipe'] and 
+                  recent_gestures[-1]['type'] in ['fast_swipe', 'normal_swipe']):
+                if recent_gestures[-2]['direction'] == recent_gestures[-1]['direction']:
+                    print(f"检测到连续{recent_gestures[-1]['direction']}滑动")
+                    # 可以加速滑动效果
+    
+    def _smooth_coordinate_interpolation(self, start_pos, end_pos, steps=5):
+        """平滑坐标插值，提供更流畅的滑动体验"""
+        if not self.client or not self.client.alive:
+            return
+            
+        start_x, start_y = start_pos
+        end_x, end_y = end_pos
+        
+        for i in range(1, steps + 1):
+            # 使用贝塞尔曲线进行平滑插值
+            t = i / steps
+            # 简单的线性插值，可以改为更复杂的曲线
+            smooth_t = t * t * (3.0 - 2.0 * t)  # 平滑步进函数
+            
+            x = start_x + (end_x - start_x) * smooth_t
+            y = start_y + (end_y - start_y) * smooth_t
+            
+            # 边界检查
+            if hasattr(self, 'device_image') and self.device_image:
+                image_width = getattr(self.device_image, 'width', 0) or 400
+                image_height = getattr(self.device_image, 'height', 0) or 800
+                x = max(0, min(x, image_width))
+                y = max(0, min(y, image_height))
+            
+            try:
+                self.client.control.touch(int(x), int(y), const.ACTION_MOVE)
+                print(f"平滑插值步骤 {i}: ({int(x)}, {int(y)})")
+            except Exception as ex:
+                print(f"平滑插值失败: {ex}")
+                break
+            
+            # 短暂延迟以确保平滑效果
+            time.sleep(0.01)
     
     def _on_hover(self, e):
         """处理悬停事件"""
@@ -483,23 +810,49 @@ class DeviceView(ft.Container):
         """鼠标移动事件处理"""
         if not self.client or not self.client.alive:
             return
+        
+        # 事件时间控制，避免过度频繁的事件
+        current_time = time.time() * 1000  # 转换为毫秒
+        if current_time - self.last_event_time < self.min_event_interval:
+            return
+        self.last_event_time = current_time
             
-        # 获取鼠标坐标
-        x = event.get('x', 0)
-        y = event.get('y', 0)
+        # 获取鼠标坐标并转换为整数，避免浮点数误差
+        x = int(round(event.get('x', 0)))
+        y = int(round(event.get('y', 0)))
+        
+        # 坐标边界检查和修正
+        if hasattr(self, 'device_image') and self.device_image:
+            # 获取图像尺寸进行边界检查
+            image_width = getattr(self.device_image, 'width', 0) or 400
+            image_height = getattr(self.device_image, 'height', 0) or 800
+            
+            # 确保坐标在有效范围内
+            x = max(0, min(x, image_width))
+            y = max(0, min(y, image_height))
+        
+        # 避免发送相同坐标的重复事件，提高稳定性
+        if hasattr(self, 'last_move_x') and hasattr(self, 'last_move_y'):
+            if x == self.last_move_x and y == self.last_move_y:
+                return
         
         print(f"鼠标移动: x={x}, y={y}, 左键按下={self.mouse_left_down}, 右键按下={self.mouse_right_down}")
         
         # 更新鼠标坐标
         self.mouse_x = x
         self.mouse_y = y
+        self.last_move_x = x
+        self.last_move_y = y
         
-        # 如果鼠标左键按下，执行触摸移动
-        if self.mouse_left_down:
-            self.client.control.touch(x, y, const.ACTION_MOVE)
-        # 如果鼠标右键按下，执行触摸移动
-        elif self.mouse_right_down:
-            self.client.control.touch(x, y, const.ACTION_MOVE)
+        try:
+            # 如果鼠标左键按下，执行触摸移动
+            if self.mouse_left_down:
+                self.client.control.touch(x, y, const.ACTION_MOVE)
+            # 如果鼠标右键按下，执行触摸移动
+            elif self.mouse_right_down:
+                self.client.control.touch(x, y, const.ACTION_MOVE)
+        except Exception as ex:
+            print(f"触摸移动事件发送失败: {ex}")
     
     def mousePressEvent(self, event):
         """鼠标按下事件处理"""
@@ -511,6 +864,13 @@ class DeviceView(ft.Container):
         x = event.get('x', 0)
         y = event.get('y', 0)
         button = event.get('button', 'left')
+        
+        # 坐标边界检查和修正
+        if hasattr(self, 'device_image') and self.device_image:
+            image_width = getattr(self.device_image, 'width', 0) or 400
+            image_height = getattr(self.device_image, 'height', 0) or 800
+            x = max(0, min(x, image_width))
+            y = max(0, min(y, image_height))
         
         print(f"鼠标按下: x={x}, y={y}, 按键={button}, client.control: {hasattr(self.client, 'control')}")
         
@@ -547,15 +907,25 @@ class DeviceView(ft.Container):
         y = event.get('y', 0)
         button = event.get('button', 'left')
         
+        # 坐标边界检查和修正
+        if hasattr(self, 'device_image') and self.device_image:
+            image_width = getattr(self.device_image, 'width', 0) or 400
+            image_height = getattr(self.device_image, 'height', 0) or 800
+            x = max(0, min(x, image_width))
+            y = max(0, min(y, image_height))
+        
         print(f"鼠标释放: x={x}, y={y}, 按键={button}")
         
-        # 释放鼠标状态并执行触摸释放
-        if button == 'left' and self.mouse_left_down:
-            self.mouse_left_down = False
-            self.client.control.touch(x, y, const.ACTION_UP)
-        elif button == 'right' and self.mouse_right_down:
-            self.mouse_right_down = False
-            self.client.control.touch(x, y, const.ACTION_UP)
+        try:
+            # 释放鼠标状态并执行触摸释放
+            if button == 'left' and self.mouse_left_down:
+                self.mouse_left_down = False
+                self.client.control.touch(x, y, const.ACTION_UP)
+            elif button == 'right' and self.mouse_right_down:
+                self.mouse_right_down = False
+                self.client.control.touch(x, y, const.ACTION_UP)
+        except Exception as ex:
+            print(f"触摸释放事件发送失败: {ex}")
     
     def keyPressEvent(self, event):
         """键盘按下事件处理"""
@@ -602,4 +972,4 @@ class DeviceView(ft.Container):
         if key == 'Control Left' or key == 'Control Right':
             self.key_ctrl_down = False
         elif key == 'Alt Left' or key == 'Alt Right':
-            self.key_alt_down = False
+             self.key_alt_down = False
