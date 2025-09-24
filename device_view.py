@@ -36,35 +36,8 @@ class DeviceView(ft.Container):
         self.mouse_x = 0
         self.mouse_y = 0
         self.ori_x = 0
-        self.ori_y = 0
-        
-        # 滚轮防抖动机制
-        self.scroll_timer = None
-        self.accumulated_delta_x = 0
-        self.accumulated_delta_y = 0
-        self.scroll_position_x = 0
-        self.scroll_position_y = 0
-        
-        # 手势识别相关属性
-        self.gesture_start_time = None
-        self.gesture_start_pos = None
-        self.gesture_velocity = (0, 0)
-        self.min_swipe_distance = 30
-        self.max_tap_duration = 300
-        
-        # 事件时间控制
-        self.last_event_time = 0
-        self.min_event_interval = 16  # 约60fps，16ms间隔
-        
-        # 扩展手势识别属性
-        self.slow_swipe_velocity = 100
-        self.fast_swipe_velocity = 500
-        self.long_press_duration = 800
-        self.double_tap_interval = 300
-        
-        # 复杂手势识别
-        self.gesture_history = []
-        self.max_history_length = 10
+
+  
         
         # 创建设备屏幕图像控件 - 使用base64格式的占位符图像
         placeholder_image = self._create_placeholder_image()
@@ -347,55 +320,25 @@ class DeviceView(ft.Container):
             print(f"客户端已停止: {self.device_name}")
         print(f"DeviceView资源清理完成: {self.device_name}")
         
-        # 清理滚轮定时器
-        if hasattr(self, 'scroll_timer') and self.scroll_timer:
-            self.scroll_timer.cancel()
-            self.scroll_timer = None
-    
     def _on_scroll(self, e):
-        """处理滚轮事件，使用防抖动机制"""
-        import threading
+        """处理滚轮事件 - 基于qtscrcpy的实现原理"""
+        if not self.client or not self.client.control:
+            print("客户端未连接，跳过滚轮事件")
+            return
         
+        # 获取滚轮增量
         delta_x = getattr(e, 'scroll_delta_x', 0)
         delta_y = getattr(e, 'scroll_delta_y', 0)
         
-        # 获取鼠标在设备屏幕上的坐标
+        # 获取鼠标位置
         x = getattr(e, 'local_x', 0)
         y = getattr(e, 'local_y', 0)
         
         print(f"滚轮事件: x={x}, y={y}, delta_x={delta_x}, delta_y={delta_y}")
         
-        # 累积滚动增量
-        self.accumulated_delta_x += delta_x
-        self.accumulated_delta_y += delta_y
-        self.scroll_position_x = x
-        self.scroll_position_y = y
-        
-        # 如果已有定时器，取消它
-        if self.scroll_timer:
-            self.scroll_timer.cancel()
-        
-        # 设置新的定时器，100ms后执行滚动（减少延迟）
-        self.scroll_timer = threading.Timer(0.1, self._execute_scroll)
-        self.scroll_timer.start()
-    
-    def _execute_scroll(self):
-        """执行实际的滚动操作（防抖动后）"""
-        if not self.client or not self.client.control:
-            print("客户端未连接，跳过滚轮事件")
+        # 如果滚动增量太小，忽略
+        if abs(delta_x) < 0.1 and abs(delta_y) < 0.1:
             return
-        
-        # 获取累积的滚动增量
-        delta_x = self.accumulated_delta_x
-        delta_y = self.accumulated_delta_y
-        x = self.scroll_position_x
-        y = self.scroll_position_y
-        
-        # 重置累积值
-        self.accumulated_delta_x = 0
-        self.accumulated_delta_y = 0
-        
-        print(f"执行滚动: x={x}, y={y}, 累积delta_x={delta_x}, 累积delta_y={delta_y}")
         
         # 获取设备分辨率
         try:
@@ -404,55 +347,55 @@ class DeviceView(ft.Container):
         except:
             device_width, device_height = 800, 600
         
-        print(f"设备分辨率: {device_width}x{device_height}")
-        
         # 计算设备坐标
         touch_x = int(x)
         touch_y = int(y)
         
-        # 计算滚动距离（屏幕高度的2%，减小滚动幅度）
-        scroll_distance = int(device_height * 0.02)
+        # 基于qtscrcpy的滚动参数设置
+        # 滚动距离：屏幕高度的3%，提供适中的滚动效果
+        scroll_distance = int(device_height * 0.03)
         
-        # 计算move_step_length（固定值20px，减小步长）
-        move_step_length = 20
+        # 滑动参数：使用更平滑的滑动
+        move_step_length = 15  # 每步15px，比之前稍大
+        move_steps_delay = 0.01  # 10ms延迟，更快的响应
         
         try:
-            # 垂直滚动（反转方向）
-            if delta_y > 0:  # 向上滚轮 -> 页面向下滚动（手指向上滑动）
-                start_y = touch_y
-                end_y = max(0, touch_y - scroll_distance)  # 向上滑动
-                print(f"滚轮向上 -> 页面向下滚动: swipe({touch_x}, {start_y}) -> ({touch_x}, {end_y}), step_length={move_step_length}")
-                
-                # 使用swipe方法，减小移动延迟
-                self.client.control.swipe(touch_x, start_y, touch_x, end_y, move_step_length=move_step_length, move_steps_delay=0.2)
-                
-            elif delta_y < 0:  # 向下滚轮 -> 页面向上滚动（手指向下滑动）
-                start_y = touch_y
-                end_y = min(device_height, touch_y + scroll_distance)  # 向下滑动
-                print(f"滚轮向下 -> 页面向上滚动: swipe({touch_x}, {start_y}) -> ({touch_x}, {end_y}), step_length={move_step_length}")
-                
-                # 使用swipe方法，减小移动延迟
-                self.client.control.swipe(touch_x, start_y, touch_x, end_y, move_step_length=move_step_length, move_steps_delay=0.2)
+            # 垂直滚动（qtscrcpy风格：滚轮方向与页面滚动方向一致）
+            if abs(delta_y) > abs(delta_x):  # 垂直滚动优先
+                if delta_y > 0:  # 向上滚轮 -> 页面向下滚动
+                    start_y = touch_y
+                    end_y = max(0, touch_y - scroll_distance)
+                    print(f"滚轮向上 -> 页面向下滚动: swipe({touch_x}, {start_y}) -> ({touch_x}, {end_y})")
+                    self.client.control.swipe(touch_x, start_y, touch_x, end_y, 
+                                            move_step_length=move_step_length, 
+                                            move_steps_delay=move_steps_delay)
+                elif delta_y < 0:  # 向下滚轮 -> 页面向上滚动
+                    start_y = touch_y
+                    end_y = min(device_height, touch_y + scroll_distance)
+                    print(f"滚轮向下 -> 页面向上滚动: swipe({touch_x}, {start_y}) -> ({touch_x}, {end_y})")
+                    self.client.control.swipe(touch_x, start_y, touch_x, end_y, 
+                                            move_step_length=move_step_length, 
+                                            move_steps_delay=move_steps_delay)
             
-            # 水平滚动（反转方向）
-            if delta_x > 0:  # 向右滚轮 -> 页面向左滚动（手指向右滑动）
-                start_x = touch_x
-                end_x = min(device_width, touch_x + scroll_distance)  # 向右滑动
-                print(f"滚轮向右 -> 页面向左滚动: swipe({start_x}, {touch_y}) -> ({end_x}, {touch_y}), step_length={move_step_length}")
-                
-                # 使用swipe方法，减小移动延迟
-                self.client.control.swipe(start_x, touch_y, end_x, touch_y, move_step_length=move_step_length, move_steps_delay=0.2)
-                
-            elif delta_x < 0:  # 向左滚轮 -> 页面向右滚动（手指向左滑动）
-                start_x = touch_x
-                end_x = max(0, touch_x - scroll_distance)  # 向左滑动
-                print(f"滚轮向左 -> 页面向右滚动: swipe({start_x}, {touch_y}) -> ({end_x}, {touch_y}), step_length={move_step_length}")
-                
-                # 使用swipe方法，减小移动延迟
-                self.client.control.swipe(start_x, touch_y, end_x, touch_y, move_step_length=move_step_length, move_steps_delay=0.2)
+            # 水平滚动
+            elif abs(delta_x) > 0.1:  # 水平滚动
+                if delta_x > 0:  # 向右滚轮 -> 页面向左滚动
+                    start_x = touch_x
+                    end_x = max(0, touch_x - scroll_distance)
+                    print(f"滚轮向右 -> 页面向左滚动: swipe({start_x}, {touch_y}) -> ({end_x}, {touch_y})")
+                    self.client.control.swipe(start_x, touch_y, end_x, touch_y, 
+                                            move_step_length=move_step_length, 
+                                            move_steps_delay=move_steps_delay)
+                elif delta_x < 0:  # 向左滚轮 -> 页面向右滚动
+                    start_x = touch_x
+                    end_x = min(device_width, touch_x + scroll_distance)
+                    print(f"滚轮向左 -> 页面向右滚动: swipe({start_x}, {touch_y}) -> ({end_x}, {touch_y})")
+                    self.client.control.swipe(start_x, touch_y, end_x, touch_y, 
+                                            move_step_length=move_step_length, 
+                                            move_steps_delay=move_steps_delay)
                 
         except Exception as ex:
-            print(f"发送swipe滚动命令时出错: {ex}")
+            print(f"发送滚动命令时出错: {ex}")
 
     # Flet事件处理器 - 使用GestureDetector的事件
     def _on_tap_down(self, e):
