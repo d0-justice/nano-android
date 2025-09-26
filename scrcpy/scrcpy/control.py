@@ -104,7 +104,7 @@ class ControlSender:
         h_scaled = int(h * scroll_multiplier)
         v_scaled = int(v * scroll_multiplier)
         
-        # 限制在int16范围内
+        # 限制在int16范围?
         h_scroll = max(-32767, min(32767, h_scaled))
         v_scroll = max(-32767, min(32767, v_scaled))
         
@@ -116,7 +116,7 @@ class ControlSender:
             int(self.parent.resolution[1]),
             h_scroll,
             v_scroll,
-            0,  # buttons状态
+            0,  # buttons"
         )
 
     @inject(const.TYPE_BACK_OR_SCREEN_ON)
@@ -202,7 +202,7 @@ class ControlSender:
         """
         return struct.pack(">?", on)
     
-    # 保持向后兼容性
+    # 保持向后兼容?
     def set_screen_power_mode(self, mode: int = scrcpy.POWER_MODE_NORMAL) -> bytes:
         """
         Set screen power mode (deprecated, use set_display_power instead)

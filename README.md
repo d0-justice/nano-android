@@ -103,14 +103,34 @@ screenshot_[device_id]_[timestamp].png
 ```
 nano-android/
 ├── main.py                 # Main application entry point
-├── device_view.py          # Device screen view component
-├── device_screenshot.py    # Screenshot functionality
+├── signal_manager.py       # Signal system for component communication
 ├── requirements.txt        # Python dependencies
-├── scrcpy/                 # Scrcpy client library
-│   ├── core.py            # Core scrcpy client
-│   ├── device.py          # Device management
-│   └── scrcpy/            # Scrcpy server and utilities
-└── README.md              # This file
+├── view/                   # UI components and views
+│   ├── __init__.py        # Package initialization
+│   ├── main_window.py     # Main application window
+│   ├── device_view.py     # Device screen view component
+│   ├── device_screenshot.py # Screenshot functionality
+│   ├── element_inspector.py # UI element inspection
+│   ├── hierarchy.py       # UI hierarchy viewer
+│   ├── chat.py           # Chat interface component
+│   ├── code.py           # Code editor component
+│   ├── flow.py           # Flow diagram component
+│   └── graph.py          # Graph visualization component
+├── test/                  # Test files
+│   ├── __init__.py       # Package initialization
+│   ├── test_signal_system.py # Signal system tests
+│   └── test_decorator_signal_system.py # Decorator signal tests
+├── scrcpy/               # Scrcpy client library
+│   ├── core.py          # Core scrcpy client
+│   ├── device.py        # Device management
+│   └── scrcpy/          # Scrcpy server and utilities
+├── uiautomation/        # UI automation utilities
+│   ├── element_selector.py # Element selection utilities
+│   ├── hierarchy_manager.py # Hierarchy management
+│   └── ui_visualizer.py # UI visualization tools
+├── utils/               # Utility functions
+├── adb_proxy/          # ADB proxy utilities
+└── README.md           # This file
 ```
 
 ## Configuration

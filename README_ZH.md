@@ -103,14 +103,34 @@ screenshot_[设备ID]_[时间戳].png
 ```
 nano-android/
 ├── main.py                 # 主应用程序入口点
-├── device_view.py          # 设备屏幕视图组件
-├── device_screenshot.py    # 截图功能
+├── signal_manager.py       # 组件通信信号系统
 ├── requirements.txt        # Python依赖
-├── scrcpy/                 # Scrcpy客户端库
-│   ├── core.py            # 核心scrcpy客户端
-│   ├── device.py          # 设备管理
-│   └── scrcpy/            # Scrcpy服务器和工具
-└── README.md              # 英文说明文档
+├── view/                   # UI组件和视图
+│   ├── __init__.py        # 包初始化文件
+│   ├── main_window.py     # 主应用程序窗口
+│   ├── device_view.py     # 设备屏幕视图组件
+│   ├── device_screenshot.py # 截图功能
+│   ├── element_inspector.py # UI元素检查器
+│   ├── hierarchy.py       # UI层次结构查看器
+│   ├── chat.py           # 聊天界面组件
+│   ├── code.py           # 代码编辑器组件
+│   ├── flow.py           # 流程图组件
+│   └── graph.py          # 图形可视化组件
+├── test/                  # 测试文件
+│   ├── __init__.py       # 包初始化文件
+│   ├── test_signal_system.py # 信号系统测试
+│   └── test_decorator_signal_system.py # 装饰器信号测试
+├── scrcpy/               # Scrcpy客户端库
+│   ├── core.py          # 核心scrcpy客户端
+│   ├── device.py        # 设备管理
+│   └── scrcpy/          # Scrcpy服务器和工具
+├── uiautomation/        # UI自动化工具
+│   ├── element_selector.py # 元素选择工具
+│   ├── hierarchy_manager.py # 层次结构管理
+│   └── ui_visualizer.py # UI可视化工具
+├── utils/               # 工具函数
+├── adb_proxy/          # ADB代理工具
+└── README.md           # 英文说明文档
 ```
 
 ## 配置选项

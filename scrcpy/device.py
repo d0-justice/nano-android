@@ -26,7 +26,7 @@ import cv2
 class Ui_Form(object):
     def setupUi(self, Form):
         Form.setObjectName("Form")
-        # 初始窗口大小，后续会根据图像大小动态调整
+        # 初始窗口大小，后续会根据图像大小动态调
         Form.setFixedSize(400, 800)
         self.img_label = QtWidgets.QLabel(Form)
         self.img_label.setGeometry(QtCore.QRect(0, 1, 400, 800))
@@ -50,7 +50,7 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
         self.setWindowTitle(ch_name)
 
         self.setFixedSize(self.width(), self.height())
-        self.img_label.setMouseTracking(True)  # 启用图片标签的鼠标跟踪
+        self.img_label.setMouseTracking(True)  # 启用图片标签的鼠标跟
         
         # 设置窗口属性以接收事件
         self.setFocusPolicy(Qt.StrongFocus)  # 设置焦点策略
@@ -69,17 +69,17 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
         
         # 鼠标交互相关
         self.mouse_x = 0
-        self.current_frame = None  # 存储当前帧以便坐标转换
+        self.current_frame = None  # 存储当前帧以便坐标转
         self.mouse_y = 0
         
         # 滚轮配置
-        self.scroll_sensitivity = 0.3  # 滚轮敏感度
-        self.scroll_min_threshold = 10  # 最小滚动阈值
-        self.scroll_max_distance = 100  # 最大滚动距离
+        self.scroll_sensitivity = 0.3  # 滚轮敏感
+        self.scroll_min_threshold = 10  # 最小滚动阈
+        self.scroll_max_distance = 100  # 最大滚动距
         
         # 公共画布支持 - 供其他模块绘制UI元素边框
-        self.public_canvas = None  # 公共画布，其他模块可以在此绘制
-        self.canvas_lock = threading.RLock()  # 画布线程锁
+        self.public_canvas = None  # 公共画布，其他模块可以在此绘
+        self.canvas_lock = threading.RLock()  # 画布线程
         
         # 检查是否为模拟设备模式
         if ch_name == "simulator":
@@ -89,17 +89,17 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
             self.start_simulator()
         else:
             try:
-                print(f"正在初始化客户端，设备: {ch_name}")
+                print(f"正在初始化客户端，设 {ch_name}")
                 self.client = Client(device=ch_name, max_width=800, bitrate=4000000, max_fps=20, connection_timeout=10000)
                 print("正在添加帧监听器...")
                 self.client.add_listener("frame", self.on_frame)
-                print("正在启动客户端...")
+                print("正在启动客户..")
                 self.client.start(threaded=True)
-                print(f"成功连接到设备 {ch_name}")
+                print(f"成功连接到设{ch_name}")
                 self.simulator_mode = False
             except Exception as e:
                 print(f"连接设备失败: {e}")
-                print("请确保:")
+                print("请确")
                 print("1. Android 设备已连接并启用 USB 调试")
                 print("2. 运行 'adb devices' 确认设备可见")
                 print("3. 运行 'adb push scrcpy-server.jar /data/local/tmp/' 推送服务器文件")
@@ -156,10 +156,10 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
                 self.frame_count += 1
                 image_height, image_width, image_depth = frame.shape
                 
-                # 减少日志输出频率，每30帧（约1秒）打印一次
+                # 减少日志输出频率，每30帧（1秒）打印一
                 current_time = time.time()
                 if current_time - self.last_frame_info_time > 1.0:
-                    print(f"收到帧: {image_width}x{image_height}, FPS: {self.frame_count}/{current_time - self.last_frame_info_time:.1f}")
+                    print(f"收到 {image_width}x{image_height}, FPS: {self.frame_count}/{current_time - self.last_frame_info_time:.1f}")
                     self.frame_count = 0
                     self.last_frame_info_time = current_time
                                 
@@ -170,17 +170,17 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
                     self.window_resized = True
                     print(f"窗口大小已调整为: {image_width}x{image_height}")
                 
-                # 处理公共画布渲染 - 将UI元素边框叠加到frame上
+                # 处理公共画布渲染 - 将UI元素边框叠加到frame
                 display_frame = frame.copy()
                 with self.canvas_lock:
                     if self.public_canvas is not None:
                         try:
                             # 确保画布尺寸与frame匹配
                             if self.public_canvas.shape[:2] == (image_height, image_width):
-                                # 将画布内容叠加到frame上
+                                # 将画布内容叠加到frame
                                 # 使用加权混合，让原图可见，画布内容作为覆盖层
-                                alpha = 0.6  # 原图透明度
-                                beta = 0.4   # 画布透明度 - 提高边框可见性
+                                alpha = 0.6  # 原图透明
+                                beta = 0.4   # 画布透明- 提高边框可见
                                 display_frame = cv2.addWeighted(display_frame, alpha, self.public_canvas, beta, 0)
                             else:
                                 # 如果尺寸不匹配，重置画布
@@ -191,7 +191,7 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
                             self.public_canvas = None
                                 
                 q_im = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
-                q_im = QImage(q_im.data, image_width, image_height,  # 创建QImage格式的图像，并读入图像信息
+                q_im = QImage(q_im.data, image_width, image_height,  # 创建QImage格式的图像，并读入图像信
                              image_width * image_depth,
                              QImage.Format_RGB888)
                 self.img_label.setPixmap(QPixmap.fromImage(q_im))
@@ -208,16 +208,16 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
         """设置公共画布，供其他模块绘制UI元素边框
         
         Args:
-            canvas: OpenCV格式的画布(numpy array)，或None清空画布
+            canvas: OpenCV格式的画numpy array)，或None清空画布
         """
         with self.canvas_lock:
             self.public_canvas = canvas
     
     def get_frame_size(self):
-        """获取当前帧的尺寸，供其他模块创建匹配的画布
+        """获取当前帧的尺寸，供其他模块创建匹配的画
         
         Returns:
-            tuple: (height, width) 或 None如果未接收到帧
+            tuple: (height, width) ，None如果未接收到
         """
         if hasattr(self, 'current_frame') and self.current_frame is not None:
             return self.current_frame.shape[:2]
@@ -239,25 +239,25 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
 
 
     def show_help(self):
-        """显示快捷键帮助信息"""
+        """显示快捷键帮助信"""
         print("\n" + "="*50)
-        print("🎮 Android分析器 - 快捷键帮助")
+        print("🎮 Android分析- 快捷键帮")
         print("="*50)
         print("💡 基础功能:")
-        print("  • 基础scrcpy屏幕镜像功能")
-        print("  • 支持公共画布用于外部UI绘制")
-        print("  • 改进的滚轮滚动控制")
+        print("  基础scrcpy屏幕镜像功能")
+        print("  支持公共画布用于外部UI绘制")
+        print("  改进的滚轮滚动控")
         print("")
-        print("🖱️ 滚轮控制:")
-        print("  • 鼠标滚轮: 在视频区域内滚动")
-        print("  • + 键: 增加滚轮敏感度")
-        print("  • - 键: 减少滚轮敏感度")
-        print("  • 0 键: 重置滚轮设置为默认值")
+        print("🖱滚轮控制:")
+        print("  鼠标滚轮: 在视频区域内滚动")
+        print("  +  增加滚轮敏感")
+        print("  -  减少滚轮敏感")
+        print("  0  重置滚轮设置为默")
         print("")
         print("📊 当前滚轮设置:")
-        print(f"  • 敏感度: {self.scroll_sensitivity}")
-        print(f"  • 最小阈值: {self.scroll_min_threshold}")
-        print(f"  • 最大距离: {self.scroll_max_distance}")
+        print(f"  敏感 {self.scroll_sensitivity}")
+        print(f"  最小阈 {self.scroll_min_threshold}")
+        print(f"  最大距 {self.scroll_max_distance}")
         print("="*50)
 
 
@@ -265,61 +265,61 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
         if self.client is None:
             return
             
-        # 获取鼠标在窗口中的位置
+        # 获取鼠标在窗口中的位
         mouse_x = a0.x()
         mouse_y = a0.y()
         
-        # 检查鼠标是否在视频区域内
+        # 检查鼠标是否在视频区域
         if not self.img_label.geometry().contains(mouse_x, mouse_y):
             return
             
         # 获取滚轮角度增量
         angle_delta = a0.angleDelta().y()
         
-        # 计算滚动距离（根据角度增量调整敏感度）
+        # 计算滚动距离（根据角度增量调整敏感度
         scroll_distance = int(angle_delta * self.scroll_sensitivity)
         
         # 确保滚动距离在合理范围内
         scroll_distance = max(-self.scroll_max_distance, min(self.scroll_max_distance, scroll_distance))
         
-        # 如果滚动距离为0，不执行滚动
+        # 如果滚动距离，不执行滚动
         if scroll_distance == 0:
             return
             
-        # 使用scroll方法进行滚动，而不是硬编码的触摸事件
-        # scroll方法需要水平位置、垂直位置、水平移动距离、垂直移动距离
+        # 使用scroll方法进行滚动，而不是硬编码的触摸事
+        # scroll方法需要水平位置、垂直位置、水平移动距离、垂直移动距
         try:
             self.client.control.scroll(mouse_x, mouse_y, 0, scroll_distance)
-            print(f"🖱️ 滚轮事件: 位置({mouse_x}, {mouse_y}), 角度增量: {angle_delta}, 滚动距离: {scroll_distance}")
+            print(f"🖱滚轮事件: 位置({mouse_x}, {mouse_y}), 角度增量: {angle_delta}, 滚动距离: {scroll_distance}")
         except Exception as e:
-            print(f"❌ 滚轮事件处理失败: {e}")
+            print(f"滚轮事件处理失败: {e}")
     
     def set_scroll_sensitivity(self, sensitivity: float):
-        """设置滚轮敏感度
-        
+        """
+        设置滚轮敏感
         Args:
             sensitivity: 敏感度系数，建议范围 0.1-1.0
         """
         self.scroll_sensitivity = max(0.1, min(1.0, sensitivity))
-        print(f"🎛️ 滚轮敏感度已设置为: {self.scroll_sensitivity}")
+        print(f"🎛滚轮敏感度已设置 {self.scroll_sensitivity}")
     
     def set_scroll_threshold(self, threshold: int):
-        """设置滚轮最小阈值
+        """设置滚轮最小阈
         
         Args:
-            threshold: 最小角度增量阈值
+            threshold: 最小角度增量阈
         """
         self.scroll_min_threshold = max(1, threshold)
-        print(f"🎛️ 滚轮最小阈值已设置为: {self.scroll_min_threshold}")
+        print(f"🎛滚轮最小阈值已设置 {self.scroll_min_threshold}")
     
     def set_scroll_max_distance(self, max_distance: int):
-        """设置滚轮最大滚动距离
+        """设置滚轮最大滚动距
         
         Args:
-            max_distance: 最大滚动距离
+            max_distance: 最大滚动距
         """
         self.scroll_max_distance = max(10, max_distance)
-        print(f"🎛️ 滚轮最大距离已设置为: {self.scroll_max_distance}")
+        print(f"🎛滚轮最大距离已设置 {self.scroll_max_distance}")
 
     def mouseMoveEvent(self, a0: QtGui.QMouseEvent) -> None:
         # 更新鼠标位置
@@ -389,22 +389,22 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
         #     self.character.use_skill_manually_down(self.character.skill_head_slot)
         elif a0.key() == Qt.Key_C:
             pass
-        # U键功能已移除 - UIAutomator2 不可用
-        # elif a0.key() == Qt.Key_D:  # D 键添加 dumpsys 信息显示
+        # U键功能已移除 - UIAutomator2 不可
+        # elif a0.key() == Qt.Key_D:  # D 键添dumpsys 信息显示
         #     self.show_dumpsys_info()
-        # elif a0.key() == Qt.Key_H:  # H 键切换悬停高亮
+        # elif a0.key() == Qt.Key_H:  # H 键切换悬停高
         #     self.toggle_hover_highlight()
         # elif a0.key() == Qt.Key_P:  # P 键切换性能模式
         #     self.toggle_performance_mode()
-        # elif a0.key() == Qt.Key_M:  # M 键调整最大元素数量
+        # elif a0.key() == Qt.Key_M:  # M 键调整最大元素数
         #     self.adjust_max_elements()
-        # elif a0.key() == Qt.Key_I:  # I 键调整分析间隔
+        # elif a0.key() == Qt.Key_I:  # I 键调整分析间
         #     self.adjust_analysis_interval()
         # elif a0.key() == Qt.Key_S:  # S 键显示性能统计
         #     self.show_performance_stats()
-        # elif a0.key() == Qt.Key_F:  # F 键切换快速/标准分析器
+        # elif a0.key() == Qt.Key_F:  # F 键切换快标准分析
         #     self.toggle_analyzer()
-        elif a0.key() == Qt.Key_Question or a0.key() == Qt.Key_Slash:  # ? 键显示帮助
+        elif a0.key() == Qt.Key_Question or a0.key() == Qt.Key_Slash:  #  键显示帮
             self.show_help()
         elif a0.key() == Qt.Key_Plus or a0.key() == Qt.Key_Equal:  # + 键增加滚轮敏感度
             new_sensitivity = min(1.0, self.scroll_sensitivity + 0.1)
@@ -412,13 +412,13 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
         elif a0.key() == Qt.Key_Minus:  # - 键减少滚轮敏感度
             new_sensitivity = max(0.1, self.scroll_sensitivity - 0.1)
             self.set_scroll_sensitivity(new_sensitivity)
-        elif a0.key() == Qt.Key_0:  # 0 键重置滚轮设置
+        elif a0.key() == Qt.Key_0:  # 0 键重置滚轮设
             self.set_scroll_sensitivity(0.3)
             self.set_scroll_threshold(10)
             self.set_scroll_max_distance(100)
-            print("🔄 滚轮设置已重置为默认值")
-        if a0.key() == Qt.Key_Backslash:  # 返斜杠
-            print('生成技能图形指纹完成')
+            print("🔄 滚轮设置已重置为默认")
+        if a0.key() == Qt.Key_Backslash:  # 返斜
+            print("生成技能图形指纹完")
         return super().keyPressEvent(a0)
 
     def keyReleaseEvent(self, a0: QtGui.QKeyEvent) -> None:
@@ -460,11 +460,11 @@ class MyWin(QtWidgets.QWidget,Ui_Form):
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
 
-    # 获取可用的设备列表
+    # 获取可用的设备列
     try:
         import subprocess
         result = subprocess.run(['adb', 'devices'], capture_output=True, text=True, timeout=5)
-        lines = result.stdout.strip().split('\n')[1:]  # 跳过第一行标题
+        lines = result.stdout.strip().split('\n')[1:]  # 跳过第一行标
         devices = []
         for line in lines:
             if line.strip() and 'device' in line:
@@ -472,20 +472,20 @@ if __name__ == '__main__':
                 devices.append(device_id)
         
         if not devices:
-            print("❌ 没有找到连接的Android设备")
+            print("没有找到连接的Android设备")
             print("请确保：")
             print("1. 设备已连接并开启USB调试")
-            print("2. ADB驱动已正确安装") 
+            print("2. ADB驱动已正确安") 
             print("3. 在设备上允许USB调试授权")
             sys.exit(1)
         
-        # 使用第一个可用设备
+        # 使用第一个可用设
         device_id = devices[0]
-        print(f"✅ 发现设备: {device_id}")
+        print(f"发现设备: {device_id}")
         
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"❌ ADB命令执行失败: {e}")
-        print("请确保ADB已安装并在PATH环境变量中")
+        print(f"ADB命令执行失败: {e}")
+        print("请确保ADB已安装并在PATH环境变量")
         print("⚠️  启动模拟设备模式...")
 
     win = MyWin(device_id)

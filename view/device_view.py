@@ -10,12 +10,16 @@ import base64
 import math
 
 # 添加scrcpy模块路径
-sys.path.append(os.path.join(os.path.dirname(__file__), 'scrcpy'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'scrcpy'))
 from scrcpy.core import Client
 import scrcpy.const as const
 
+# 导入信号管理器
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from utils.signal_manager import SignalType, send_signal, signal_receiver, SignalMixin
 
-class DeviceView(ft.Container):
+
+class DeviceView(SignalMixin, ft.Container):
     """设备屏幕显示视图类"""
     
     def __init__(self, device_name: str = None, bgcolor=None, **kwargs):
@@ -38,7 +42,6 @@ class DeviceView(ft.Container):
         self.mouse_y = 0
         self.ori_x = 0
         self.ori_y = 0
-        
         
         # 创建设备屏幕图像控件 - 使用base64格式的占位符图像
         placeholder_image = self._create_placeholder_image()
@@ -79,8 +82,9 @@ class DeviceView(ft.Container):
             self.gesture_detector
         ], spacing=0, alignment=ft.MainAxisAlignment.CENTER, expand=True)
         
-        # 调用父类构造函数
-        super().__init__(
+        # 调用父类构造函数 - 先调用SignalMixin，再调用ft.Container
+        SignalMixin.__init__(self)
+        ft.Container.__init__(self,
             content=device_content,
             expand=True,
             padding=ft.padding.all(5),  # 添加内边距
@@ -122,6 +126,16 @@ class DeviceView(ft.Container):
         
         return img_base64
     
+    @signal_receiver(SignalType.KEYBOARD_SHORTCUT)
+    def _on_keyboard_signal(self, sender, signal_data):
+        """处理键盘信号"""
+        if signal_data and signal_data.data:
+            key_event = signal_data.data
+            if key_event.get('type') == 'key_press':
+                self.keyPressEvent(key_event.get('event'))
+            elif key_event.get('type') == 'key_release':
+                self.keyReleaseEvent(key_event.get('event'))
+    
     def _on_connect_click(self, e):
         """连接设备按钮点击事件"""
         if self.client is None:
@@ -144,10 +158,22 @@ class DeviceView(ft.Container):
             print("正在启动客户端...")
             self.client.start(threaded=True)
             print(f"成功连接到设备 {self.device_name}")
+            
+            # 发送设备连接信号
+            send_signal(SignalType.DEVICE_CONNECTED, self, {
+                'device_name': self.device_name,
+                'client': self.client
+            })
                 
         except Exception as e:
             print(f"连接设备失败: {e}")
             self.client = None
+            # 发送连接失败信号
+            send_signal(SignalType.APP_ERROR, self, {
+                'error_type': 'device_connection_failed',
+                'device_name': self.device_name,
+                'error': str(e)
+            })
     
     def _auto_connect(self):
         """自动连接设备的方法"""
@@ -159,8 +185,14 @@ class DeviceView(ft.Container):
         if self.client:
             try:
                 self.client.stop()
+                device_name = self.device_name
                 self.client = None
                 print("设备连接已断开")
+                
+                # 发送设备断开信号
+                send_signal(SignalType.DEVICE_DISCONNECTED, self, {
+                    'device_name': device_name
+                })
                 
                 # 更新按钮状态
                 if self.connect_button:
@@ -173,6 +205,12 @@ class DeviceView(ft.Container):
                 
             except Exception as e:
                 print(f"断开连接失败: {e}")
+                # 发送断开失败信号
+                send_signal(SignalType.APP_ERROR, self, {
+                    'error_type': 'device_disconnection_failed',
+                    'device_name': self.device_name,
+                    'error': str(e)
+                })
     
     def on_frame(self, frame):
         """处理从scrcpy接收到的帧数据 - 优化版本"""
@@ -193,7 +231,7 @@ class DeviceView(ft.Container):
                 current_time = time.time()
                 if current_time - self.last_frame_info_time > 2.0:  # 增加到2秒减少日志频率
                     image_height, image_width = frame.shape[:2]
-                    print(f"收到帧: {image_width}x{image_height}, FPS: {self.frame_count/2:.1f}")
+                    # print(f"收到帧: {image_width}x{image_height}, FPS: {self.frame_count/2:.1f}")
                     self.frame_count = 0
                     self.last_frame_info_time = current_time
                 
@@ -240,76 +278,29 @@ class DeviceView(ft.Container):
             except Exception as e:
                 print(f"UI更新错误: {e}")
     
-    def update_device_image(self, image_data: str):
-        """更新设备屏幕图像"""
-        print(f"DEBUG: update_device_image called - image_data: {bool(image_data)}, ref: {bool(self.device_image_ref.current)}")
-        
-        if image_data and self.device_image_ref.current:
-            try:
-                # 检查图像数据格式
-                if image_data.startswith('data:image/'):
-                    # 如果是data URI格式，直接使用
-                    print(f"DEBUG: Using data URI format, length: {len(image_data)}")
-                    self.device_image_ref.current.src = image_data
-                    self.device_image_ref.current.src_base64 = None
-                elif image_data.startswith('/9j/') or image_data.startswith('iVBOR'):
-                    # 如果是纯base64数据，使用src_base64
-                    print(f"DEBUG: Using base64 format, length: {len(image_data)}")
-                    self.device_image_ref.current.src_base64 = image_data
-                    self.device_image_ref.current.src = None
-                else:
-                    # 尝试作为base64处理
-                    print(f"DEBUG: Treating as base64 data, length: {len(image_data)}")
-                    self.device_image_ref.current.src_base64 = image_data
-                    self.device_image_ref.current.src = None
-                
-                # 更新图像控件
-                self.device_image_ref.current.update()
-                print(f"DEBUG: Image updated successfully")
-                
-            except Exception as e:
-                print(f"DEBUG: Error updating image: {e}")
-                # 如果更新失败，显示错误占位符
-                self._show_error_placeholder()
-        else:
-            print(f"DEBUG: Cannot update image - image_data: {bool(image_data)}, ref: {bool(self.device_image_ref.current)}")
-            # 显示等待占位符
-            self._show_waiting_placeholder()
     
     def _show_waiting_placeholder(self):
         """显示等待占位符图像"""
         if self.device_image_ref.current:
+            # 检查组件是否已添加到页面
+            if not hasattr(self.device_image_ref.current, 'page') or not self.device_image_ref.current.page:
+                print("DEBUG: Image control not added to page yet, skipping placeholder update")
+                return
+                
             waiting_image = self._create_placeholder_image()
             self.device_image_ref.current.src_base64 = waiting_image
             self.device_image_ref.current.src = None
             self.device_image_ref.current.update()
     
-    def _show_error_placeholder(self):
-        """显示错误占位符图像 - 使用OpenCV替代PIL"""
-        # 创建错误占位符图像 (280x350, 浅红色背景)
-        img = np.full((350, 280, 3), (240, 128, 128), dtype=np.uint8)  # 浅红色背景 (BGR格式)
-        
-        # 添加错误信息文本
-        cv2.putText(img, "Connection Error", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 139), 1)  # 深红色
-        cv2.putText(img, "Failed to update image", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)  # 红色
-        
-        # 转换为base64
-        _, buffer = cv2.imencode('.png', img)
-        img_base64 = base64.b64encode(buffer).decode('utf-8')
-        
-        if self.device_image_ref.current:
-            self.device_image_ref.current.src_base64 = img_base64
-            self.device_image_ref.current.src = None
-            self.device_image_ref.current.update()
-    
-    def get_device_image_control(self) -> Optional[ft.Image]:
-        """获取设备图像控件引用"""
-        return self.device_image_ref.current
     
     def cleanup(self):
         """清理资源"""
         print(f"开始清理DeviceView资源: {self.device_name}")
         self.is_ui_active = False  # 标记UI不再活跃
+        
+        # 清理信号连接
+        self.cleanup_signals()
+        
         if self.client:
             print(f"正在停止客户端: {self.device_name}")
             self.client.stop()
@@ -711,3 +702,31 @@ class DeviceView(ft.Container):
             self.key_ctrl_down = False
         elif e.key in ['Alt Left', 'Alt Right']:
             self.key_alt_down = False
+
+    def capture_screenshot(self):
+        """捕获当前设备屏幕截图
+        
+        Returns:
+            numpy.ndarray or None: 当前帧数据，如果没有可用帧则返回None
+        """
+        print("开始截图捕获...")  # 调试日志
+        
+        # 检查设备连接状态
+        if not hasattr(self, 'client') or not self.client:
+            print("设备未连接")
+            return None
+            
+        if not self.client.alive:
+            print("设备连接不活跃")
+            return None
+        
+        # 检查当前帧是否可用
+        if not hasattr(self, 'current_frame') or self.current_frame is None:
+            print("没有可用的帧数据进行截图")
+            return None
+            
+        print(f"当前帧形状: {self.current_frame.shape}")
+        print("截图捕获成功")
+        
+        # 返回当前帧的副本，避免引用问题
+        return self.current_frame.copy() if self.current_frame is not None else None

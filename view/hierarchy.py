@@ -2,24 +2,47 @@
 
 import flet as ft
 from typing import Dict, List, Any, Optional
+from uiautomation.hierarchy_manager import HierarchyManager
+
+# 导入信号管理器
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from utils.signal_manager import SignalType, send_signal, signal_receiver, SignalMixin
 
 
-class Hierarchy(ft.Container):
+class Hierarchy(SignalMixin, ft.Container):
     """页面元素层次结构管理器 - 负责页面元素树的显示和管理"""
     
-    def __init__(self, page: ft.Page, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, page: ft.Page, device_id: str = None, **kwargs):
         self.page = page
+        self.device_id = device_id
         self.current_elements = []  # 当前页面的元素列表
         self.selected_element = None  # 当前选中的元素
         self.element_tree_ref = ft.Ref()  # 元素树的引用
         self.device_controller = None  # 设备控制器引用
         self.on_element_select_callback = None  # 元素选择回调
+        
+        # 初始化HierarchyManager
+        self.hierarchy_manager = HierarchyManager(device_id)
+        
+        # 调用父类构造函数 - 先调用SignalMixin，再调用ft.Container
+        SignalMixin.__init__(self)
+        ft.Container.__init__(self, **kwargs)
+        
+        # 在父类初始化完成后创建UI元素
         self.create_element_tree_panel()
         
     def set_device_controller(self, device_controller):
         """设置设备控制器"""
         self.device_controller = device_controller
+    
+    @signal_receiver(SignalType.HIERARCHY_CAPTURE_REQUESTED)
+    def _on_hierarchy_capture_requested(self, sender, signal_data):
+        """处理层次结构捕获请求信号"""
+        print("🌳 收到层次结构捕获请求信号")
+        self.refresh_element_tree()
     
     def create_element_tree_panel(self):
         """创建元素树面板（使用DataTable）"""
@@ -125,7 +148,7 @@ class Hierarchy(ft.Container):
             'RelativeLayout': ft.Icons.GRID_VIEW,
             'FrameLayout': ft.Icons.LAYERS,
             'ConstraintLayout': ft.Icons.GRID_ON,
-            'ScrollView': ft.Icons.SCROLL,
+            'ScrollView': ft.Icons.VERTICAL_ALIGN_CENTER,
             'HorizontalScrollView': ft.Icons.SWAP_HORIZ,
             'RecyclerView': ft.Icons.LIST,
             'ListView': ft.Icons.FORMAT_LIST_BULLETED,
@@ -265,27 +288,73 @@ class Hierarchy(ft.Container):
         return icon_map.get(element_type, ft.Icons.WIDGETS)
 
     def refresh_element_tree(self, e=None):
-        """刷新元素树"""
+        """刷新元素树 - 使用HierarchyManager获取真实数据"""
         try:
-            # 获取当前页面元素
-            if self.device_controller:
-                self.current_elements = self.device_controller.get_page_elements()
+            print("开始刷新元素树...")
             
-            # 更新DataTable数据
-            if self.element_tree_ref.current:
-                self.element_tree_ref.current.rows = self.create_element_data_rows()
-                self.element_tree_ref.current.update()
+            # 使用HierarchyManager获取hierarchy数据
+            hierarchy_data = self.hierarchy_manager.get_hierarchy_data()
             
-            # 清空选中的元素
-            self.selected_element = None
+            if hierarchy_data:
+                # 获取解析后的元素列表
+                self.current_elements = self.hierarchy_manager.get_elements()
+                print(f"获取到 {len(self.current_elements)} 个元素")
+                
+                # 更新DataTable数据
+                if self.element_tree_ref.current:
+                    self.element_tree_ref.current.rows = self.create_element_data_rows()
+                    self.element_tree_ref.current.update()
+                    
+                # 清空选中的元素
+                self.selected_element = None
+                
+                # 发送层次结构更新信号
+                send_signal(SignalType.HIERARCHY_UPDATED, self, {
+                    'device_id': self.device_id,
+                    'elements': self.current_elements,
+                    'element_count': len(self.current_elements)
+                })
+                
+                print("元素树刷新完成")
+            else:
+                print("未能获取到hierarchy数据，使用模拟数据")
+                # 如果获取失败，使用模拟数据
+                self.current_elements = self.get_mock_elements()
+                if self.element_tree_ref.current:
+                    self.element_tree_ref.current.rows = self.create_element_data_rows()
+                    self.element_tree_ref.current.update()
                 
         except Exception as ex:
             print(f"刷新元素树失败: {ex}")
+            # 发送错误信号
+            send_signal(SignalType.APP_ERROR, self, {
+                'error_type': 'hierarchy_refresh_failed',
+                'device_id': self.device_id,
+                'error': str(ex)
+            })
+            # 发生异常时使用模拟数据
+            self.current_elements = self.get_mock_elements()
+            if self.element_tree_ref.current:
+                self.element_tree_ref.current.rows = self.create_element_data_rows()
+                self.element_tree_ref.current.update()
+    
+    def get_hierarchy_from_key_press(self):
+        """响应按键获取hierarchy数据的方法"""
+        print("检测到`键，开始获取hierarchy数据...")
+        self.refresh_element_tree()
+        return self.current_elements
 
     def on_element_selected(self, element: Dict[str, Any]):
         """元素被选中时的回调"""
         self.selected_element = element
-        # 触发选择事件，供外部监听
+        
+        # 发送元素选择信号
+        send_signal(SignalType.HIERARCHY_ELEMENT_SELECTED, self, {
+            'device_id': self.device_id,
+            'element': element
+        })
+        
+        # 触发选择事件，供外部监听（保持向后兼容）
         if hasattr(self, 'on_element_select_callback') and self.on_element_select_callback:
             self.on_element_select_callback(element)
 
